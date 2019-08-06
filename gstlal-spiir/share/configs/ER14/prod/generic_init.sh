@@ -237,7 +237,7 @@ mynodename="postcohspiir"
 onbits=290
 # Use INTENT and HOFT_OK bits, do not use injection bits
 onbits=3
-V1onbits=2
+V1onbits=515
 
 if (( ${iflive} == 1 )); then
     if (( ${ndet} == 2)); then
