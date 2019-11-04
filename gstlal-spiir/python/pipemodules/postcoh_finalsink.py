@@ -936,7 +936,13 @@ class CoincsDocFromPostcoh(object):
 		row.mass = trigger.mtotal
 		row.end_time = trigger.end_time
 		row.coinc_event_id = "coinc_event:coinc_event_id:1"
-		row.snr = trigger.cohsnr
+		#Manoj: add Network SNR to sngl_inspiral table instead of Coherent SNR. Change is reflected on gracedb event page.
+		#row.snr = trigger.cohsnr
+		network_snr2 = 0
+                for ifo in re.findall('..', trigger.ifos):
+                        network_snr2 += (getattr(trigger, "snglsnr_%s" % ifo[0]))**2
+                network_snr = numpy.sqrt(network_snr2)  ##network_snr = sqrt(H**2 + L**2 + V**2)
+                row.snr = network_snr
 		row.end_time_ns = trigger.end_time_ns
 		row.combined_far = trigger.far
 		row.ifos = ','.join(re.findall('..',trigger.ifos)) #FIXME: for more complex detector names
