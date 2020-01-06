@@ -144,11 +144,6 @@ options, gid = parse_command_line()
 if not os.path.exists('gracedb'):
 	os.mkdir('gracedb')
 
-try:
-	os.mkdir('gracedb/' + gid)
-except OSError:
-	pass
-
 if options.verbose:
 	print("loading tables from event %s" %gid)
 #
@@ -161,6 +156,21 @@ sngl_inspiral_table = lsctables.SnglInspiralTable.get_table(xmldoc)
 postcoh_table_row = postcoh_table_def.PostcohInspiralTable.get_table(xmldoc)[0]
 process_params_table = lsctables.ProcessParamsTable.get_table(xmldoc)
 event_ifos = "".join(coinc_inspiral_row.ifos.split(","))
+
+#
+# construct the trigger filename
+# if no trigger file found in the run directory meaning the trigger is not produced from this run location,
+# skip the following actions
+#
+trigger_fname = "%s_%s_%s_%s.xml" % (postcoh_table_row.ifos, postcoh_table_row.end_time, postcoh_table_row.bankid, postcoh_table_row.tmplt_idx)
+if not os.path.exists(trigger_fname):
+	sys.exit(0) # not such trigger, exit this program
+
+try:
+	os.mkdir('gracedb/' + gid)
+except OSError:
+	pass
+
 ifo_list = coinc_inspiral_row.ifos.split(",")
 path = sngl_inspiral_table[0].search
 for process_params in process_params_table:

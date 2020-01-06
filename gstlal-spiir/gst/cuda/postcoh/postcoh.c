@@ -1674,7 +1674,7 @@ static void cuda_postcoh_process(GstCollectPads *pads, gint common_size, CudaPos
 		cur_ifo = 0;
 		for (int iifo = 0; iifo < state->nifo; ++iifo)
 			if (!state->cur_ifo_is_gap[iifo]) {
-				strncpy(state->cur_ifos + IFO_LEN* cur_ifo, IFOMap[iifo].name, sizeof(char) *IFO_LEN);
+				strncpy(state->cur_ifos + IFO_LEN* cur_ifo, IFOMap[state->write_ifo_mapping[iifo]].name, sizeof(char) *IFO_LEN);
 				cur_ifo ++;
 			}
 
