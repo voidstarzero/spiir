@@ -442,7 +442,9 @@ class FinalSink(object):
 
 		# FIXME: any two of the sngl fars need to be < singlefar_veto_thresh 
 		# single far veto for high-significance trigger
-		ifo_active=[self.candidate.chisq_H!=0,self.candidate.chisq_L!=0,self.candidate.chisq_V!=0]
+		# ifo_active=[self.candidate.chisq_H!=0,self.candidate.chisq_L!=0,self.candidate.chisq_V!=0]
+                # add an upper limit for the chisq for uploaded event compared to the last line, hardcoded to have uploaded event with chisq < 3 
+                ifo_active=[self.candidate.chisq_H!=0 and self.candidate.chisq_H < 3,self.candidate.chisq_L!=0 and self.candidate.chisq_L < 3,self.candidate.chisq_V!=0 and self.candidate.chisq_V < 3]
 		ifo_fars_ok=[self.candidate.far_h < self.singlefar_veto_thresh and self.candidate.far_h > 0., self.candidate.far_l < self.singlefar_veto_thresh and self.candidate.far_l > 0., self.candidate.far_v < self.singlefar_veto_thresh and self.candidate.far_v > 0. ]
 		ifo_chisqs=[self.candidate.chisq_H,self.candidate.chisq_L,self.candidate.chisq_V]
 		if self.candidate.far < self.superevent_thresh:
