@@ -1034,6 +1034,7 @@ class Bank(object):
         self.matches = []
         self.flower = None
         self.epsilon = None
+        self.negative_latency = 0
 
     def build_from_tmpltbank(self, filename, sampleRate = None, negative_latency = 0, padding = 1.3, approximant = 'SpinTaylorT4', waveform_domain = "FD", epsilon_start = 0.02, epsilon_min = 0.001, epsilon_max = None, epsilon_factor = 2, filters_min = 0, filters_max = None, filters_per_loglen_min = 0, filters_per_loglen_max = None, initial_overlap_min = 0, b0_optimized_overlap_min = 0, final_overlap_min = 0, initial_overlap_max = 1, b0_optimized_overlap_max = 1, final_overlap_max = 1, nround_max = 10, alpha = .99, beta = 0.25, pnorder = 4, flower = 15, snr_cut = 0.998, all_psd = None, autocorrelation_length = 201, downsample = False, optimizer_options = {}, verbose = False, contenthandler = DefaultContentHandler):
         """
@@ -1054,7 +1055,7 @@ class Bank(object):
         self.epsilon = epsilon_start
         self.alpha = alpha
         self.beta = beta
-
+        self.negative_latency = negative_latency
 
         if sampleRate is None:
             fFinal = max(sngl_inspiral_table.getColumnByName("f_final"))
@@ -1414,6 +1415,7 @@ class Bank(object):
         root.appendChild(param.Param.build('epsilon', types.FromPyType[float], self.epsilon))
         root.appendChild(param.Param.build('alpha', types.FromPyType[float], self.alpha))
         root.appendChild(param.Param.build('beta', types.FromPyType[float], self.beta))
+        root.appendChild(param.Param.build('negative_latency', types.FromPyType[int], self.negative_latency))
 
         # FIXME:  ligolw format now supports complex-valued data
         root.appendChild(array.Array.build('autocorrelation_bank_real', self.autocorrelation_bank.real))

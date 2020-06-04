@@ -326,7 +326,7 @@ class FAPUpdater(object):
 					collected_fnames.append("%s/%s" % (self.path, one_bank_fname))
 
 class FinalSink(object):
-	def __init__(self, channel_dict, process_params, pipeline, need_online_perform, path, output_prefix, output_name, far_factor, cluster_window = 0.5, snapshot_interval = None, fapupdater_interval = None, cohfar_accumbackground_output_prefix = None, cohfar_accumbackground_output_name = None, fapupdater_output_fname = None, fapupdater_collect_walltime_string = None, singlefar_veto_thresh = 0.01, chisq_ratio_veto_thresh = 8.0, gracedb_far_threshold = None, gracedb_group = "Test", gracedb_search = "LowMass", gracedb_pipeline = "spiir", gracedb_service_url = "https://gracedb.ligo.org/api/", gracedb_offline_annote = None, output_skymap = 0, superevent_thresh = 3.8e-7, opa_cohsnr_thresh = 8, verbose = False):
+	def __init__(self, channel_dict, process_params, pipeline, need_online_perform, path, output_prefix, output_name, far_factor, cluster_window = 0.5, snapshot_interval = None, fapupdater_interval = None, cohfar_accumbackground_output_prefix = None, cohfar_accumbackground_output_name = None, fapupdater_output_fname = None, fapupdater_collect_walltime_string = None, singlefar_veto_thresh = 0.01, chisq_ratio_veto_thresh = 8.0, gracedb_far_threshold = None, gracedb_group = "Test", gracedb_search = "LowMass", gracedb_pipeline = "spiir", gracedb_service_url = "https://gracedb.ligo.org/api/", gracedb_offline_annote = None, output_skymap = 0, superevent_thresh = 3.8e-7, opa_cohsnr_thresh = 8, negative_latency = 0, verbose = False):
 		#
 		# initialize
 		#
@@ -342,6 +342,7 @@ class FinalSink(object):
 		self.cluster_window = cluster_window
 		self.candidate = None
 		self.cluster_boundary = None
+		self.negative_latency = negative_latency
 		self.need_candidate_check = False
 		self.cur_event_table = lsctables.New(postcoh_table_def.PostcohInspiralTable)
 		self.chisq_ratio_thresh = chisq_ratio_veto_thresh
@@ -485,8 +486,9 @@ class FinalSink(object):
 				self.t_start = buf_timestamp
 				self.is_first_buf = False
 
+			headevent_endtime = buf_timestamp + self.negative_latency
 			if self.is_first_event and nevent > 0:
-				self.cluster_boundary = buf_timestamp + self.cluster_window
+				self.cluster_boundary = headevent_endtime + self.cluster_window
 				self.is_first_event = False
 
 			# extend newevents to cur_event_table
@@ -498,9 +500,9 @@ class FinalSink(object):
 
 			# NOTE: only consider clustered trigger for uploading to gracedb 
 			# check if the newevents is over boundary
-			# this loop will exit when the cluster_boundary is incremented to be > the buf_timestamp, see plot in self.cluster()
+			# this loop will exit when the cluster_boundary is incremented to be > the headevent_endtime, see diagram in self.cluster()
 
-			while self.cluster_window > 0 and self.cluster_boundary and buf_timestamp > self.cluster_boundary:
+			while self.cluster_window > 0 and self.cluster_boundary and headevent_endtime > self.cluster_boundary:
 				self.cluster(self.cluster_window)
 
 				if self.need_candidate_check:
@@ -546,14 +548,14 @@ class FinalSink(object):
 
 	def cluster(self, cluster_window):
 		# send candidate to be gracedb checked only when:
-		# time ->->->->
-		#                     |buf_timestamp
+		# timestamp small ->->->-> large
+		#                     |headevent_endtime
 		#          ___________(cur_table)
 		#                |boundary
-		#           |candidate to be gracedb checked = peak of cur_table < boundary
-		#                  |candidate remain = peak of cur_table > boundary
+		#           |candidate to be gracedb checked = end time of the peak of cur_table < boundary
+		#                  |candidate remain = end time of the peak of cur_table > boundary
 		# afterwards:
-		#                     |buf_timestamp
+		#                     |headevent_endtime
 		#                 ____(cur_table cleaned)
 		#                           |boundary incremented
 
@@ -567,8 +569,10 @@ class FinalSink(object):
 			self.candidate = None # so we can reselect a candidate next time
 			return
 		# the first event in cur_event_table
+		# FIXME: SPEEDUP
 		peak_event = self.__select_head_event()
 		# find the max cohsnr event within the boundary of cur_event_table
+		# FIXME: SPEEDUP
 		for row in self.cur_event_table:
 			if row.end <= self.cluster_boundary and row.cohsnr > peak_event.cohsnr:
 				peak_event = row
@@ -581,12 +585,15 @@ class FinalSink(object):
 			return
 
 		if peak_event.end <= self.cluster_boundary and peak_event.cohsnr > self.candidate.cohsnr:
+			# if peak_event.cohsnr > candidate.cohsnr, slide window so the centre 
+			# becomes the peak_event
 			self.candidate = peak_event
 			iterutils.inplace_filter(lambda row: row.end > self.cluster_boundary, self.cur_event_table)
 			# update boundary
 			self.cluster_boundary = self.candidate.end + cluster_window
 			self.need_candidate_check = False
-		else:
+		else: 
+			# if peak_event.cohsnr < candidate.cohsnr, pop out candidate for gracedb uploading
 			iterutils.inplace_filter(lambda row: row.end > self.cluster_boundary, self.cur_event_table)
 			# update boundary
 			self.cluster_boundary = self.cluster_boundary + cluster_window
