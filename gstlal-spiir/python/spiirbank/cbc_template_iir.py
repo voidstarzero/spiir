@@ -172,6 +172,54 @@ def tukeywindow(data, samps = 200.):
     tp = float(samps) / len(data)
     return lal.CreateTukeyREAL8Window(len(data), tp).data.data
 
+# Capital Theta function, defined in lalsuite GeneratePPNInspiral.h
+
+def gen_eta(m1, m2):
+    eta = (m1*m2)/(m1+m2)**2
+    return eta
+
+def gen_PPN_theta(eta, mtot, t_c, t):
+
+    if t <= t_c:
+        theta_t = eta*lal.MSUN_SI/(5.*lal.MTSUN_SI*mtot)*(t_c-t)
+    else:
+        theta_t = 0
+    return theta_t
+
+def gen_PPN_freq(eta, mtot, nPN, t_c, t):
+
+    theta = gen_PPN_theta(eta, mtot, t_c, t)
+    p = numpy.ones(nPN*2, dtype= 'double')
+    p[1]=0
+    if theta==0:
+        f_t = 0
+    else:
+        f_t  =  lal.MSUN_SI/(8*numpy.pi*lal.MTSUN_SI*mtot)*(
+            p[0]*theta**(-3/8.)+
+            p[1]*theta**(-1/2.)+
+            p[2]*(743/2688.+11/32.*eta)*theta**(-5/8.)-
+            p[3]*3*numpy.pi/10*theta**(-3/4.)+
+            p[4]*(1855099/14450688.+56975/258048.*eta+371/2048.*eta**2)*theta**(-7/8.)-
+            p[5]*(7729/21504.+3/256.*eta)*numpy.pi*theta**(-1.))
+
+    return f_t
+
+def calc_fhigh_neglat_PPN(row, negative_latency, verbose = False):
+
+    eta = gen_eta(row.mass1, row.mass2)
+    mtot = (row.mass1 + row.mass2) * lal.MSUN_SI
+    nPN = 3 # 3 PN hard-coded
+    t_c = negative_latency
+    t = 0
+
+    f_t = gen_PPN_freq(eta, mtot, nPN, t_c, t)
+
+    if verbose:
+        logging.info("end freq calculated by PPN  %f Hz," % f_t)
+ 
+    return f_t
+
+
 
 # Calculate the phase and amplitude from hc and hp
 # Unwind the phase (this is slow - consider C extension or using SWIG
@@ -607,7 +655,7 @@ def gen_whitened_spiir_template_and_reconstructed_waveform(sngl_inspiral_table, 
     # cut at the beginning to avoid long low SNR accumulation
     # cut at the end for negative latency template
     # data_full = original uncut template
-    amp, phase, data, data_full, epoch_index = gen_whitened_amp_phase(psd, approximant, waveform_domain, sampleRate, flower, working_state, row, is_frequency_whiten = 1, snr_cut = 0.998, negative_latency = negative_latency, verbose = verbose)
+    amp, phase, data, data_full, epoch_index, fhigh = gen_whitened_amp_phase(psd, approximant, waveform_domain, sampleRate, flower, working_state, row, is_frequency_whiten = 1, snr_cut = 0.998, negative_latency = negative_latency, verbose = verbose)
 
     # get the padded length, so SPIIR approximated waveform u_rev_pad
     # the original cut template h_pad, and the original one will be
@@ -706,6 +754,86 @@ def gen_lalsim_waveform(row, flower, sampleRate, approximant_string):
     #plt.plot(axis_x, phase)
     #plt.show()
 
+def calc_fhigh_neglat(fseries, working_state, negative_latency, verbose = False):
+
+    # get some units 
+    working_length = working_state["working_length"]
+    working_duration = working_state["working_duration"]
+    sampleRate = working_length/working_duration
+    dt = 1.0/ (sampleRate)
+    df = 1.0/ (working_duration)
+
+    #
+    # the length of tmp_fdata is n/2 + 1 where n is the length of the input 
+    # real signal
+    #
+
+    tmp_fdata = numpy.array(fseries.data.data)
+
+    #
+    # estimate the end frequency of the uncut waveform first
+    # the end frequency is estimated at the overlap accumulation over 0.999
+    # i.e. find the smallest index where cumsum(|(fdata)|^2) > 0.999
+    # 0.999 is chosen to match the turning point of the cumsum
+    #
+
+    cumag = numpy.cumsum(numpy.multiply(tmp_fdata, numpy.conj(tmp_fdata)))
+    cumag = cumag/cumag[-1]
+    idx_end = numpy.argmax(cumag >= 0.999)
+
+    # the high freq cut off at original uncut waveform
+
+    fhigh = idx_end * df
+ 
+    #
+    # transform template to time domain
+    # note here need to use rfft
+    # so the converted time domain waveform is real and its length is n,
+    # consistent with the original waveform 
+    #
+
+    tdata = numpy.fft.irfft(tmp_fdata) * df
+    assert len(tdata) == working_length
+
+    # apply smoothing window
+
+    tdata *= tukeywindow(tdata, samps = 32)
+
+
+    # truncate at the end 
+    nsample_cut = int(negative_latency*sampleRate)
+    if nsample_cut > 0:
+        tdata_neglat = tdata[:-nsample_cut]
+    else:
+        tdata_neglat = tdata
+
+    # apply smoothing window
+
+    tdata_neglat *= tukeywindow(tdata_neglat, samps = 32)
+
+    #
+    # estimate the end freq of cut waveform using the same method for 
+    # uncut waveform above
+    #
+
+    # output size is (n-nsample_cut)/2+1
+    fdata_neglat = numpy.fft.rfft(tdata_neglat) * dt
+
+
+    cumag_neglat = numpy.cumsum(numpy.multiply(fdata_neglat, numpy.conj(fdata_neglat)))
+    cumag_neglat = cumag_neglat/cumag_neglat[-1]
+    idx_end = numpy.argmax(cumag_neglat >= 0.999)
+    # the high freq cut off at the cut waveform
+    df_neglat = 1./float(working_duration - negative_latency)
+    fhigh_neglat = idx_end * df_neglat
+    # feed it back to the original waveform
+    idx_end_ori = int(fhigh_neglat/ df)
+    # fseries.data.data[idx_end_ori:] = 0.
+    if verbose:
+        logging.info("end freq of uncut waveform %f Hz," \
+            "end freq of negative latency waveform  %f Hz" % (fhigh,
+            fhigh_neglat))
+    return fhigh, fhigh_neglat, tdata, fseries.data.data, fdata_neglat
 
 def gen_whitened_amp_phase(psd, approximant, waveform_domain, sampleRate, flower, working_state, row, snr_cut = 1.0, is_frequency_whiten = 1, negative_latency = 0, verbose = False):
     """ Generates whitened waveform from given parameters and PSD, then returns the amplitude and the phase.
@@ -765,6 +893,18 @@ def gen_whitened_amp_phase(psd, approximant, waveform_domain, sampleRate, flower
         fseries = cbc_template_fir.generate_template(row, approximant, sampleRate, working_state["working_duration"], flower, sampleRate / 2., fwdplan = fwdplan, fworkspace = fworkspace)
         epoch_time = fseries.epoch.gpsSeconds + fseries.epoch.gpsNanoSeconds*1.e-9
 	
+        # estimate the end frequency using power FFT
+        if negative_latency > 0:
+            fhigh = calc_fhigh_neglat(
+                fseries, working_state, negative_latency, verbose = verbose)[1]
+            #
+            # compare it with end fhigh estimated using the theoretical post-
+            # Newtonian method
+            #
+            if verbose: 
+                fhigh_PPN = calc_fhigh_neglat_PPN(
+                    row, negative_latency, verbose = verbose)
+
         # whiten the FD waveform and transform it back to TD
         data_full = lalwhitenFD_and_convert2TD(psd, fseries, sampleRate, working_state, flower)
 	epoch_index = - int(epoch_time*sampleRate) - len(data_full)
@@ -827,7 +967,7 @@ def gen_whitened_amp_phase(psd, approximant, waveform_domain, sampleRate, flower
     if verbose:
         logging.info("original template length %d, cut to construct spiir coeffs %d, epoch_index %d" % (len(data_full), len(data), epoch_index))
 
-    return amp_lalwhiten, phase_lalwhiten, data, data_full, epoch_index
+    return amp_lalwhiten, phase_lalwhiten, data, data_full, epoch_index, fhigh
 
 def gen_spiir_response(length, a1, b0, delay):
         u = spawaveform.iirresponse(length, a1, b0, delay)
@@ -976,9 +1116,12 @@ class Bank(object):
             # cut at the beginning to avoid long low SNR accumulation
             # cut at the end for negative latency template
             # data_full = original uncut template
-            amp, phase, data, data_full, epoch_index = gen_whitened_amp_phase(psd, approximant, waveform_domain, sampleRate, flower, working_state, row, is_frequency_whiten = 1, snr_cut = snr_cut, negative_latency = negative_latency, verbose = verbose)
+            amp, phase, data, data_full, epoch_index, fhigh = gen_whitened_amp_phase(psd, approximant, waveform_domain, sampleRate, flower, working_state, row, is_frequency_whiten = 1, snr_cut = snr_cut, negative_latency = negative_latency, verbose = verbose)
 
             row.end = lal.LIGOTimeGPS(float(epoch_index)/sampleRate)
+
+            row.f_final = float(fhigh)
+
             # get the padded length, so SPIIR approximated waveform u_rev_pad
             # the original cut template h_pad, and the original one will be
             # padded to the same length
