@@ -566,7 +566,8 @@ __global__ void ker_coh_max_and_chisq_versatile
             map_idx = iifo * nifo + j;
 
             NtOff = round (toa_diff_map[map_idx * num_sky_directions + pix_idx[peak_cur]] / dt);
-            peak_pos_tmp = start_exe + len_cur + (j == iifo ? 0 : NtOff + len);
+            NtOff = (j == iifo ? 0 : NtOff);
+            peak_pos_tmp = start_exe + len_cur + NtOff + len;
             tmp_maxsnr = snr[j][len * tmplt_cur + ((peak_pos_tmp + len) % len)];
 
 			/* store the snglsnr and phase for each detector even the detector does not participate */

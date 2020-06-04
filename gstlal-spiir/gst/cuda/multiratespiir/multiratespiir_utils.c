@@ -524,7 +524,7 @@ spiir_state_load_bank( SpiirState **spstate, const char *filename, guint ndepth,
 		spiir_state_workspace_realloc_complex (&tmp_b0, &b0_len, eff_len);
 		spiir_state_workspace_realloc_int (&tmp_d, &d_len, eff_len);
 
-		// spstate[i]->d_d = (long*)inxns[i].data;
+		// spstate[i]->d_d = (int*)inxns[i].data;
 		// printf("%d - d_dim: (%d, %d) a_dim: (%d, %d) b_dim: (%d, %d)\n", i, d_array[i].dim[0], d_array[i].dim[1],
 		//		a_array[i].dim[0], a_array[i].dim[1], b_array[i].dim[0], b_array[i].dim[1]);
 
@@ -536,7 +536,7 @@ spiir_state_load_bank( SpiirState **spstate, const char *filename, guint ndepth,
 		{
 			for (k = 0; k < num_templates; ++k)
 			{
-				tmp_d[k * num_filters + j] = (int)(((long*)(d_array[i].data))[j * num_templates + k]);
+				tmp_d[k * num_filters + j] = (int)(((int*)(d_array[i].data))[j * num_templates + k]);
 				cur_d = tmp_d[k * num_filters + j] ;
 				tmp_max = cur_d > tmp_max ? cur_d : tmp_max;
 				tmp_a1[k * num_filters + j].re = (float)(((double*)(a_array[i].data))[j * 2 * num_templates + k]);
