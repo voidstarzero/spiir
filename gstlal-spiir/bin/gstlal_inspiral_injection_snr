@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 #
 # Copyright (C) 2015 Ryan Lang
+# Copyright (C) 2020 Manoj Kovalam
 #
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by the
@@ -33,6 +34,7 @@ __author__ = 'Ryan Lang <ryan.lang@ligo.org>'
 
 import math
 import numpy
+import copy
 
 from optparse import OptionParser
 from glue import segments
@@ -45,14 +47,17 @@ from lal.series import *
 from lal.utils import CacheEntry
 import lalsimulation
 
+from functools import partial
 import multiprocessing
 
 def parse_command_line():
 	parser = OptionParser(description = __doc__)
 	parser.add_option("--reference-psd-cache", metavar = "filename", help = "Set the reference psd cache file.")
 	parser.add_option("--injection-file", metavar = "filename", help = "Set the injection xml file.")
+	parser.add_option("--output", metavar = "filename", help = "Set the output xml file.")
 	parser.add_option("--flow", metavar = "value", type = "float", help = "Set the low frequency for waveform generation and SNR integral.")
 	parser.add_option("--npool", metavar = "value", type = "int", default = 2, help = "Set value for pool. Number of parallel sub-processes")
+	parser.add_option("--premerger-cut", metavar = "value", type = "int", default = 0, help = "Set template truncation cut off. Defaults to full bandwidth.")
 
 	options, filenames = parser.parse_args()
 
@@ -65,10 +70,13 @@ def parse_command_line():
 	if options.flow is None:
 		raise ValueError("Must specify --flow")
 
+	if options.output is None:
+		options.output = options.injection_file
+
 	return options, filenames
 
 
-def calc_expected_snr(inj):
+def calc_expected_snr(premerger_cut, inj):
 	# FIXME:  don't hard-code detectors
 	snr = dict.fromkeys(("H1", "L1", "V1"), 0.0)
 
@@ -131,8 +139,18 @@ def calc_expected_snr(inj):
 		if instrument not in chosenPSD:
 			continue
 		h = lalsimulation.SimDetectorStrainREAL8TimeSeries(h_plus, h_cross, inj.longitude, inj.latitude, inj.polarization, lalsimulation.DetectorPrefixToLALDetector(instrument))
-		snr[instrument] = lalsimulation.MeasureSNR(h, chosenPSD[instrument], options.flow, 0.85 * (sample_rate / 2.))
 
+		#print 'Samples: ',len(h.data.data)
+		#print 'Length: ',len(h.data.data)/sample_rate
+		#print 'Length_struct: ',h.data.length
+
+		new_length = len(h.data.data) - premerger_cut*int(sample_rate)
+		h_n = lal.CreateREAL8TimeSeries(h.name, h.epoch, h.f0, h.deltaT, h.sampleUnits, new_length)
+		h_n.data.data = h.data.data[:new_length]
+
+		snr[instrument] = lalsimulation.MeasureSNR(h_n, chosenPSD[instrument], options.flow, 0.85 * (sample_rate / 2.))
+
+	#print premerger_cut
 	return snr
 
 @lsctables.use_in
@@ -149,7 +167,10 @@ options, filenames = parse_command_line()
 
 # Now we need to read in from the sim_inspiral table
 xmldoc = ligolw_utils.load_filename(options.injection_file, verbose = True, contenthandler = LIGOLWContentHandler)
-sim_inspiral_table = lsctables.SimInspiralTable.get_table(xmldoc)
+
+new_xmldoc = copy.deepcopy(xmldoc)
+xmldoc.unlink()
+sim_inspiral_table = lsctables.SimInspiralTable.get_table(new_xmldoc)
 if sim_inspiral_table:
 	inj_segment = segments.segment(min(inj.time_geocent for inj in sim_inspiral_table), max(inj.time_geocent for inj in sim_inspiral_table))
 else:
@@ -176,8 +197,10 @@ for cacheentry in reference_psd_files:
 
 pool = multiprocessing.Pool(options.npool)
 snr = []
+
+snr_func = partial(calc_expected_snr, options.premerger_cut)
 #print pool.map(calc_expected_snr,[inj for idx, inj in enumerate(sim_inspiral_table)])
-for simsnr in pool.map(calc_expected_snr,[inj for idx, inj in enumerate(sim_inspiral_table)]):
+for simsnr in pool.map(snr_func,[inj for idx, inj in enumerate(sim_inspiral_table)]):
 	snr.append(simsnr)
 pool.close()
 pool.join()
@@ -189,4 +212,4 @@ for idx, inj in enumerate(sim_inspiral_table):
 	inj.alpha5 = snr[idx]["L1"]
 	inj.alpha6 = snr[idx]["V1"]
 
-ligolw_utils.write_filename(xmldoc,options.injection_file,verbose = True)
+ligolw_utils.write_filename(new_xmldoc,options.output,verbose = True)
