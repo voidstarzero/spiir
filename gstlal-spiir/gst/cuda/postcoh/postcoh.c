@@ -1234,6 +1234,7 @@ static int cuda_postcoh_write_table_to_buf(CudaPostcoh *postcoh, GstBuffer *outb
 			cur_tmplt_idx = pklist->tmplt_idx[peak_cur];
 			XLALINT8NSToGPS(&end_time, ts);
 			// NOTE: adjust for the merger/epoch time of the trigger
+			GST_DEBUG_OBJECT(postcoh, "cur time %" GST_TIME_FORMAT ", sngl end time %d", GST_TIME_ARGS(ts), sngl_table[cur_tmplt_idx].end.gpsSeconds);
 			XLALGPSAddGPS(&end_time, &(sngl_table[cur_tmplt_idx].end));
 			len_cur = pklist->len_idx[peak_cur];
 			XLALGPSAdd(&(end_time), (double) len_cur/exe_len);
@@ -1290,6 +1291,7 @@ static int cuda_postcoh_write_table_to_buf(CudaPostcoh *postcoh, GstBuffer *outb
 			output->spin2y = sngl_table[tmplt_idx].spin2y;
 			output->spin2z = sngl_table[tmplt_idx].spin2z;
 			output->eta = sngl_table[tmplt_idx].eta;
+			output->f_final = sngl_table[tmplt_idx].f_final;
 			/* convert pixel index to ra and dec */
 			double theta, phi;
 			/* ra = phi, dec = pi/2 - theta */	

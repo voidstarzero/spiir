@@ -95,6 +95,7 @@ tagPostcohInspiralTable
   REAL8		deff_L;
   REAL8		deff_V;
   REAL8     rank;
+  REAL4    f_final;
   LIGOTimeGPS	epoch;
   double	deltaT;
   size_t	snr_length;

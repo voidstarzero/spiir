@@ -10,7 +10,7 @@ dbtables.ligolwtypes.ToPyType["ilwd:char"] = unicode
 
 
 PostcohInspiralID = ilwd.get_ilwdchar_class(u"postcoh", u"event_id")
-# defined in postcohinspiral_table.h
+# need to be consistent with the table defined in postcohinspiral_table.h
 class PostcohInspiralTable(table.Table):
 	tableName = "postcoh"
 	validcolumns = {
@@ -74,6 +74,7 @@ class PostcohInspiralTable(table.Table):
 			"spin2y":	"real_4",
 			"spin2z":	"real_4",
 			"eta":		"real_4",
+			"f_final":	"real_4",
 			"ra":		"real_8",
 			"dec":		"real_8",
 			"deff_L":	"real_8",

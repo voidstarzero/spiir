@@ -1031,7 +1031,7 @@ class CoincsDocFromPostcoh(object):
 			row.alpha5 = 0
 			row.alpha6 = 0
 			row.beta = 0
-			row.f_final = 2048
+			row.f_final = trigger.f_final
 			row.snr = getattr(trigger, "snglsnr_%s" % ifo[0])
 			row.chisq = getattr(trigger, "chisq_%s" % ifo[0])
 			row.chisq_dof = 4

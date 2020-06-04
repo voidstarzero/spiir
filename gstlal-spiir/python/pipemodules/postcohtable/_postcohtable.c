@@ -126,6 +126,7 @@ static struct PyMemberDef members[] = {
 	{"deff_L", T_DOUBLE, offsetof(gstlal_GSTLALPostcohInspiral, row.deff_L), 0, "deff_L"},
 	{"deff_H", T_DOUBLE, offsetof(gstlal_GSTLALPostcohInspiral, row.deff_H), 0, "deff_H"},
 	{"deff_V", T_DOUBLE, offsetof(gstlal_GSTLALPostcohInspiral, row.deff_V), 0, "deff_V"},
+	{"f_final", T_FLOAT, offsetof(gstlal_GSTLALPostcohInspiral, row.f_final), 0, "f_final"},
 	{"_process_id", T_LONG, offsetof(gstlal_GSTLALPostcohInspiral, row.process_id), 0, "process_id (long)"},
 	{"_event_id", T_LONG, offsetof(gstlal_GSTLALPostcohInspiral, row.event_id), 0, "event_id (long)"},
 	{NULL,}

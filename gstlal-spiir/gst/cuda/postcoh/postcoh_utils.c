@@ -27,7 +27,7 @@
 #include <cuda_runtime.h>
 
 //#define __DEBUG__ 0
-#define NSNGL_TMPLT_COLS 14
+#define NSNGL_TMPLT_COLS 15
 
 void cuda_device_print(int deviceCount)
 {  
@@ -625,7 +625,8 @@ char * ColNames[] = {
 	"sngl_inspiral:spin2z",
 	"sngl_inspiral:eta",
 	"sngl_inspiral:end_time", 
-	"sngl_inspiral:end_time_ns"
+	"sngl_inspiral:end_time_ns",
+        "sngl_inspiral:f_final"
 	};
 
 void
@@ -724,6 +725,10 @@ cuda_postcoh_sngl_tmplt_from_xml(char *fname, SnglInspiralTable **psngl_table)
 		printf("read %d, end gps %d, end nano %d\n", jlen, sngl_table[jlen].end.gpsSeconds, sngl_table[jlen].end.gpsNanoSeconds);
 		#endif
 	}
+
+	val = g_hash_table_lookup(hash, col_names[14]);
+	for (jlen=0; jlen<val->data->len; jlen++) 
+		sngl_table[jlen].f_final = g_array_index(val->data, float, jlen);
 
 	/* free memory */
 	freeTable(xtable);
