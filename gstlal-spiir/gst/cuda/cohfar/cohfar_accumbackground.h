@@ -33,6 +33,7 @@
 #include <gst/base/gstbasetransform.h>
 #include <gst/gst.h>
 #include <postcohtable.h>
+#include <libxml/xmlwriter.h>
 
 G_BEGIN_DECLS
 #define COHFAR_ACCUMBACKGROUND_TYPE (cohfar_accumbackground_get_type())
