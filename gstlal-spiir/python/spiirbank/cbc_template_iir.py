@@ -2,6 +2,7 @@
 # Copyright (C) 2013-2014 Qi Chu, David Mckenzie, Kipp Cannon, Chad Hanna, Leo Singer
 # Copyright (C) 2015 Qi Chu, Shin Chung, David Mckenzie, Yan Wang
 # Copyright (C) 2017-2018 Joel Bosveld
+# Copyright (C) 2020 Alex Codoreanu
 #
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by the
@@ -870,6 +871,7 @@ class Bank(object):
 
     def build_from_tmpltbank(self,
                              filename,
+                             templates=None,
                              sampleRate=None,
                              negative_latency=0,
                              padding=1.3,
@@ -900,10 +902,33 @@ class Bank(object):
                              downsample=False,
                              optimizer_options={},
                              verbose=False,
+                             debug=False,
+                             keep_track=True,
+                             output_file=None,
+                             remote_log=False,
                              contenthandler=DefaultContentHandler):
         """
             Build SPIIR template bank from physical parameters, e.g. mass, spin.
             """
+
+        if keep_track:
+            if output_file is None:
+                print "you told me to keep track of my status but" \
+                      "you did not provide the output file name"
+                exit(0)
+            else:
+                if '.xml.gz' not in output_file:
+                    print "the output file should end in '.xml.gz'"
+                    exit(0)
+                else:
+                    track_file = output_file.replace('.xml.gz', '_status.txt')
+                    try:
+                        with open(track_file, 'w') as w:
+                            w.writelines('')
+                    except IOError:
+                        print "I can't keep track of my run status. \n" \
+                              "Please check that you have permission to write to the" \
+                              "output directory."
 
         # Check various inputs are consistent
         assert epsilon_min <= epsilon_start
@@ -930,6 +955,9 @@ class Bank(object):
         self.alpha = alpha
         self.beta = beta
         self.negative_latency = negative_latency
+
+        if debug:
+            print 'bank object created'
 
         if sampleRate is None:
             fFinal = max(sngl_inspiral_table.getColumnByName("f_final"))
@@ -960,6 +988,11 @@ class Bank(object):
         working_state = gen_template_working_state(self.sngl_inspiral_table,
                                                    flower,
                                                    sampleRate=sampleRate)
+
+        if debug:
+            print 'working state generated'
+            print 'smoothing PSD'
+
         # Smooth the PSD and interpolate to required resolution
         if psd is not None:
             psd = cbc_template_fir.condition_psd(
@@ -984,260 +1017,302 @@ class Bank(object):
         Bmat = {}
         Dmat = {}
 
+        # TODO:
+        # add new definition of templates for default value
+        # to be list(range(len(sngl_inspiral_table)))
+
+        # templates need depend on the size of the input bank
+        if templates is None:
+            templates = list(range(len(self.sngl_inspiral_table)))
+
+        if debug:
+            print 'starting template generation'
+            print 'will create {} templates'.format(len(templates))
+
         for tmp, row in enumerate(self.sngl_inspiral_table):
-            spiir_match = -1
-            epsilon = epsilon_start
-            epsilon_a = None
-            epsilon_b = None
-            n_filters = 0
+            if tmp in templates:
+                if debug:
+                    print tmp
 
-            # data = the cutted template.
-            # cut at the beginning to avoid long low SNR accumulation
-            # cut at the end for negative latency template
-            # data_full = original uncut template
-            # fhigh is the estimated end frequency of data
-            amp, phase, data, data_full, epoch_index, fhigh = gen_whitened_amp_phase(
-                psd,
-                approximant,
-                waveform_domain,
-                sampleRate,
-                flower,
-                working_state,
-                row,
-                is_frequency_whiten=1,
-                snr_cut=snr_cut,
-                negative_latency=negative_latency,
-                verbose=verbose)
+                if keep_track:
+                    with open(track_file, 'w') as w:
+                        w.writelines('{}'.format(tmp))
 
-            # fill in the field end with the epoch time, so the pipeline will
-            # read this information and adjust for the merger time for the trigger
-            row.end = lal.LIGOTimeGPS(float(epoch_index) / sampleRate)
+                spiir_match = -1
+                epsilon = epsilon_start
+                epsilon_a = None
+                epsilon_b = None
+                n_filters = 0
 
-            row.f_final = float(fhigh)
+                # data = the cutted template.
+                # cut at the beginning to avoid long low SNR accumulation
+                # cut at the end for negative latency template
+                # data_full = original uncut template
+                # fhigh is the estimated end frequency of data
+                amp, \
+                phase, \
+                data, \
+                data_full, \
+                epoch_index, \
+                fhigh = gen_whitened_amp_phase(psd,
+                                               approximant,
+                                               waveform_domain,
+                                               sampleRate,
+                                               flower,
+                                               working_state,
+                                               row,
+                                               is_frequency_whiten=1,
+                                               snr_cut=snr_cut,
+                                               negative_latency=negative_latency,
+                                               verbose=verbose)
 
-            # get the padded length, so SPIIR approximated waveform u_rev_pad
-            # the original cut template h_pad, and the original one will be
-            # padded to the same length
-            pad_length = ceil_pow_2(len(data_full) + autocorrelation_length)
-            nround = 1
+                # fill in the field end with the epoch time, so the pipeline will
+                # read this information and adjust for the merger time for the trigger
+                row.end = lal.LIGOTimeGPS(float(epoch_index) / sampleRate)
+                row.f_final = float(fhigh)
 
-            # Collate various requirements
-            spiir_match_min = max(initial_overlap_min,
-                                  b0_optimized_overlap_min, final_overlap_min)
-            n_filters_min = max(filters_min,
-                                filters_per_loglen_min * numpy.log2(len(data)))
-            n_filters_max = None
-            if filters_per_loglen_max is not None:
-                n_filters_max = filters_per_loglen_max * numpy.log2(len(data))
-                if filters_max is not None:
-                    n_filters_max = min(filters_max, n_filters_max)
-            else:
-                n_filters_max = filters_max
-            if verbose:
-                logging.info(
-                    "spiir_match_min %s, n_filters_min %s, n_filters_max %s" %
-                    (spiir_match_min, n_filters_min, n_filters_max))
+                # get the padded length, so SPIIR approximated waveform u_rev_pad
+                # the original cut template h_pad, and the original one will be
+                # padded to the same length
+                pad_length = ceil_pow_2(len(data_full) + autocorrelation_length)
+                nround = 1
 
-            # h_pad is just the padded cut template
-            h_pad = pad_data(data, pad_length)
-            # sigmasq is based on cut template
-            fs = float(sampleRate)
-            df = 1.0 / (pad_length / fs)
-            h_pad_comp = numpy.zeros(pad_length, dtype="cdouble")
-            h_pad_comp[:len(h_pad)] = h_pad
-            h_pad_fft = numpy.fft.fft(h_pad_comp) / fs
-
-            this_sigmasq = abs((h_pad_fft * h_pad_fft.conjugate()).sum() * df)
-
-            # normalize the cut waveform so its inner-product is 2
-            norm_h = abs(numpy.dot(h_pad, numpy.conj(h_pad)))
-            h_pad *= cmath.sqrt(2 / norm_h)
-
-            # Iterate to get the filter delays matching our requirements
-            while (True):
-                a1, b0, delay, u_rev_pad = gen_norm_spiir_coeffs(
-                    amp,
-                    phase,
-                    pad_length,
-                    epsilon=epsilon,
-                    alpha=alpha,
-                    beta=beta,
-                    padding=padding)
-
-                # compute the SNR
-                spiir_match = abs(numpy.dot(u_rev_pad,
-                                            numpy.conj(h_pad))) / 2.0
-                optimizer_state = None
-                if (nround == 1):
-                    original_match = spiir_match
-                    original_filters = len(a1)
-
-                n_filters = len(delay)
+                # Collate various requirements
+                spiir_match_min = max(initial_overlap_min,
+                                      b0_optimized_overlap_min, final_overlap_min)
+                n_filters_min = max(filters_min,
+                                    filters_per_loglen_min * numpy.log2(len(data)))
+                n_filters_max = None
+                if filters_per_loglen_max is not None:
+                    n_filters_max = filters_per_loglen_max * numpy.log2(len(data))
+                    if filters_max is not None:
+                        n_filters_max = min(filters_max, n_filters_max)
+                else:
+                    n_filters_max = filters_max
                 if verbose:
                     logging.info(
-                        "number of rounds %d, epsilon_a %s, epsilon %f, epsilon_b %s, spiir overlap with template %f, number of filters %d"
-                        % (nround, epsilon_a, epsilon, epsilon_b, spiir_match,
-                           n_filters))
-                nround += 1
+                        "spiir_match_min %s, n_filters_min %s, n_filters_max %s" %
+                        (spiir_match_min, n_filters_min, n_filters_max))
 
-                epsilon_dir = 0
-                if n_filters_max is not None and n_filters > n_filters_max:
-                    # we need to increase epsilon to decrease filters
-                    epsilon_dir = 1
-                else:
-                    if n_filters >= n_filters_min:
-                        # Filters are correct, so we can now do necessary optimization in epsilon loop
-                        spiir_match_min = initial_overlap_min
-                        spiir_match_max = initial_overlap_max
-                        if spiir_match >= spiir_match_min and (
-                                b0_optimized_overlap_min > 0
-                                or final_overlap_min > 0):
-                            # optimizer uses convention that template is normalized to 1 not 2
-                            spiir_match_min = b0_optimized_overlap_min
-                            spiir_match_max = b0_optimized_overlap_max
-                            if verbose:
-                                print >> sys.stderr, "Pass -1, overlap %f" % spiir_match
-                            a1, b0, spiir_match, optimizer_state = optimize_a1(
-                                a1,
-                                delay,
-                                h_pad / numpy.sqrt(2),
-                                passes=0,
-                                verbose=verbose,
-                                return_state=True)
-                            b0 *= numpy.sqrt(2)
-                            if spiir_match >= b0_optimized_overlap_min and (
-                                    final_overlap_min > 0):
-                                spiir_match_min = final_overlap_min
-                                spiir_match_max = final_overlap_max
-                                a1, b0, spiir_match = optimize_a1(
-                                    a1,
-                                    delay,
-                                    h_pad / numpy.sqrt(2),
-                                    state=optimizer_state,
-                                    **optimizer_options)
-                                b0 *= numpy.sqrt(2)
+                # h_pad is just the padded cut template
+                h_pad = pad_data(data, pad_length)
 
-                    if n_filters < n_filters_min or spiir_match < spiir_match_min:
-                        # we need to decrease epsilon to increase filters and match
-                        epsilon_dir = -1
-                    elif spiir_match > spiir_match_max:
+                # sigmasq is based on cut template
+                fs = float(sampleRate)
+                df = 1.0 / (pad_length / fs)
+                h_pad_comp = numpy.zeros(pad_length, dtype="cdouble")
+                h_pad_comp[:len(h_pad)] = h_pad
+                h_pad_fft = numpy.fft.fft(h_pad_comp) / fs
+
+                this_sigmasq = abs((h_pad_fft * h_pad_fft.conjugate()).sum() * df)
+
+                # normalize the cut waveform so its inner-product is 2
+                norm_h = abs(numpy.dot(h_pad, numpy.conj(h_pad)))
+                h_pad *= cmath.sqrt(2 / norm_h)
+
+                # Iterate to get the filter delays matching our requirements
+                while (True):
+                    a1, \
+                    b0, \
+                    delay, \
+                    u_rev_pad = gen_norm_spiir_coeffs(amp,
+                                                      phase,
+                                                      pad_length,
+                                                      epsilon=epsilon,
+                                                      alpha=alpha,
+                                                      beta=beta,
+                                                      padding=padding)
+
+                    # compute the SNR
+                    spiir_match = abs(numpy.dot(u_rev_pad,
+                                                numpy.conj(h_pad))) / 2.0
+
+                    optimizer_state = None
+                    if (nround == 1):
+                        original_match = spiir_match
+                        original_filters = len(a1)
+
+                    n_filters = len(delay)
+                    if verbose:
+                        logging.info("number of rounds %d, epsilon_a %s, epsilon %f, epsilon_b %s, spiir overlap with"
+                                     " template %f, number of filters %d" % (nround,
+                                                                             epsilon_a,
+                                                                             epsilon,
+                                                                             epsilon_b,
+                                                                             spiir_match,
+                                                                             n_filters))
+                    nround += 1
+
+                    epsilon_dir = 0
+                    if n_filters_max is not None and n_filters > n_filters_max:
                         # we need to increase epsilon to decrease filters
                         epsilon_dir = 1
+                    else:
+                        if n_filters >= n_filters_min:
+                            # Filters are correct, so we can now do necessary optimization in epsilon loop
+                            spiir_match_min = initial_overlap_min
+                            spiir_match_max = initial_overlap_max
+                            if spiir_match >= spiir_match_min and (
+                                    b0_optimized_overlap_min > 0
+                                    or final_overlap_min > 0):
+                                # optimizer uses convention that template is normalized to 1 not 2
+                                spiir_match_min = b0_optimized_overlap_min
+                                spiir_match_max = b0_optimized_overlap_max
+                                if verbose:
+                                    print >> sys.stderr, "Pass -1, overlap %f" % spiir_match
 
-                if epsilon_dir == 1:
-                    epsilon_a = epsilon
-                    if epsilon_b:
-                        epsilon = numpy.sqrt(epsilon_b *
-                                             epsilon)  # geometric mean
-                    elif epsilon_max > 0 and epsilon < epsilon_max:
-                        epsilon = min(epsilon * epsilon_factor, epsilon_max)
-                    elif epsilon_max > 0:
+                                a1, \
+                                b0, \
+                                spiir_match, \
+                                optimizer_state = optimize_a1(a1,
+                                                              delay,
+                                                              h_pad / numpy.sqrt(2),
+                                                              passes=0,
+                                                              verbose=verbose,
+                                                              return_state=True)
+
+                                b0 *= numpy.sqrt(2)
+
+                                if spiir_match >= b0_optimized_overlap_min and (
+                                        final_overlap_min > 0):
+                                    spiir_match_min = final_overlap_min
+                                    spiir_match_max = final_overlap_max
+                                    a1, \
+                                    b0, \
+                                    spiir_match = optimize_a1(a1,
+                                                              delay,
+                                                              h_pad / numpy.sqrt(2),
+                                                              state=optimizer_state,
+                                                              **optimizer_options)
+
+                                    b0 *= numpy.sqrt(2)
+
+                        if n_filters < n_filters_min or spiir_match < spiir_match_min:
+                            # we need to decrease epsilon to increase filters and match
+                            epsilon_dir = -1
+                        elif spiir_match > spiir_match_max:
+                            # we need to increase epsilon to decrease filters
+                            epsilon_dir = 1
+
+                    if epsilon_dir == 1:
+                        epsilon_a = epsilon
+                        if epsilon_b:
+                            epsilon = numpy.sqrt(epsilon_b *
+                                                 epsilon)  # geometric mean
+                        elif epsilon_max > 0 and epsilon < epsilon_max:
+                            epsilon = min(epsilon * epsilon_factor, epsilon_max)
+                        elif epsilon_max > 0:
+                            if verbose:
+                                logging.info(
+                                    "failed to meet requirements (epsilon_max)")
+                            break
+                        else:
+                            epsilon = epsilon * epsilon_factor
+                    elif epsilon_dir == -1:
+                        epsilon_b = epsilon
+                        if epsilon_a:
+                            epsilon = numpy.sqrt(epsilon_a *
+                                                 epsilon)  # geometric mean
+                        elif epsilon > epsilon_min:
+                            epsilon = max(epsilon / epsilon_factor, epsilon_min)
+                        else:
+                            if verbose:
+                                logging.info(
+                                    "failed to meet requirements (epsilon_min)")
+                            break
+                    else:
+                        break
+
+                    if epsilon_a is not None and epsilon_a > epsilon or epsilon_b is not None and epsilon > epsilon_b or epsilon_a is not None and epsilon_b is not None and epsilon_a >= epsilon_b:
                         if verbose:
                             logging.info(
-                                "failed to meet requirements (epsilon_max)")
+                                "failed to meet requirements (inconsistency)")
                         break
-                    else:
-                        epsilon = epsilon * epsilon_factor
-                elif epsilon_dir == -1:
-                    epsilon_b = epsilon
-                    if epsilon_a:
-                        epsilon = numpy.sqrt(epsilon_a *
-                                             epsilon)  # geometric mean
-                    elif epsilon > epsilon_min:
-                        epsilon = max(epsilon / epsilon_factor, epsilon_min)
-                    else:
+                    if nround > nround_max:
                         if verbose:
                             logging.info(
-                                "failed to meet requirements (epsilon_min)")
+                                "failed to meet requirements (nround_max)")
                         break
+
+                # Once we have iterated to get the final filter delays, optimize if not already done
+                if optimizer_options is not None and (
+                        optimizer_state is None
+                        or not (spiir_match >= b0_optimized_overlap_min
+                                and final_overlap_min > 0)):
+                    # optimizer uses convention that template is normalized to 1 not 2
+                    a1, \
+                    b0, \
+                    spiir_match = optimize_a1(a1,
+                                              delay,
+                                              h_pad / numpy.sqrt(2),
+                                              state=optimizer_state,
+                                              **optimizer_options)
+
+                    b0 *= numpy.sqrt(2)
+
+                # get the final SPIIR approximated waveform
+                u_rev_pad = gen_spiir_response(pad_length, a1, b0, delay)
+
+                # This is actually the cross correlation between the original waveform and this approximation
+                # h_full_pad is just the padded original template
+                h_full_pad = pad_data(data_full, pad_length)
+
+                # normalize the cut waveform so its inner-product is 2
+                norm_h_full = abs(numpy.dot(h_full_pad, numpy.conj(h_full_pad)))
+                h_full_pad *= cmath.sqrt(2 / norm_h)
+
+                self.autocorrelation_bank[tmp, :] = \
+                    normalized_crosscorr(h_full_pad,
+                                         u_rev_pad,
+                                         autocorrelation_length)
+
+                # save the overlap of spiir reconstructed waveform with the cut template
+                self.matches.append(spiir_match)
+                # also take into account that spiir approximant not matching 100% of the original waveform
+                self.sigmasq.append(this_sigmasq * spiir_match * spiir_match)
+
+                if verbose:
+                    logging.info(
+                        "template %4.0d/%4.0d, m1 = %10.6f m2 = %10.6f, epsilon = %1.4f:  %4.0d filters, %10.8f match. original_eps = %1.4f: %4.0d filters, %10.8f match"
+                        % (tmp + 1, len(self.sngl_inspiral_table), row.mass1,
+                           row.mass2, epsilon, n_filters, spiir_match,
+                           epsilon_start, original_filters, original_match))
+
+                # get the filter frequencies
+                fs = -1. * numpy.angle(a1) / 2 / numpy.pi  # Normalised freqeuncy
+                a1dict = {}
+                b0dict = {}
+                delaydict = {}
+
+                if downsample:
+                    min_M = 1
+                    max_M = int(2**numpy.floor(numpy.log2(sampleRate / flower)))
+                    # iterate over the frequencies and put them in the right downsampled bin
+                    for i, f in enumerate(fs):
+                        M = int(
+                            max(min_M, 2**-numpy.ceil(numpy.log2(
+                                f * 2.0 * padding))))  # Decimation factor
+                        M = max(min_M, M)
+
+                        if M > max_M:
+                            continue
+
+                        a1dict.setdefault(sampleRate / M, []).append(a1[i]**M)
+                        newdelay = numpy.ceil((delay[i] + 1) / (float(M)))
+                        b0dict.setdefault(sampleRate / M, []).append(
+                            b0[i] * M**0.5 * a1[i]**(newdelay * M - delay[i]))
+                        delaydict.setdefault(sampleRate / M, []).append(newdelay)
+                    #logging.info("sampleRate %4.0d, filter %3.0d, M %2.0d, f %10.9f, delay %d, newdelay %d" % (sampleRate, i, M, f, delay[i], newdelay))
                 else:
-                    break
+                    a1dict[int(sampleRate)] = a1
+                    b0dict[int(sampleRate)] = b0
+                    delaydict[int(sampleRate)] = delay
 
-                if epsilon_a is not None and epsilon_a > epsilon or epsilon_b is not None and epsilon > epsilon_b or epsilon_a is not None and epsilon_b is not None and epsilon_a >= epsilon_b:
-                    if verbose:
-                        logging.info(
-                            "failed to meet requirements (inconsistency)")
-                    break
-                if nround > nround_max:
-                    if verbose:
-                        logging.info(
-                            "failed to meet requirements (nround_max)")
-                    break
-
-            # Once we have iterated to get the final filter delays, optimize if not already done
-            if optimizer_options is not None and (
-                    optimizer_state is None
-                    or not (spiir_match >= b0_optimized_overlap_min
-                            and final_overlap_min > 0)):
-                # optimizer uses convention that template is normalized to 1 not 2
-                a1, b0, spiir_match = optimize_a1(a1,
-                                                  delay,
-                                                  h_pad / numpy.sqrt(2),
-                                                  state=optimizer_state,
-                                                  **optimizer_options)
-                b0 *= numpy.sqrt(2)
-
-            # get the final SPIIR approximated waveform
-            u_rev_pad = gen_spiir_response(pad_length, a1, b0, delay)
-
-            # This is actually the cross correlation between the original waveform and this approximation
-
-            # h_full_pad is just the padded original template
-            h_full_pad = pad_data(data_full, pad_length)
-            # normalize the cut waveform so its inner-product is 2
-            norm_h_full = abs(numpy.dot(h_full_pad, numpy.conj(h_full_pad)))
-            h_full_pad *= cmath.sqrt(2 / norm_h)
-
-            self.autocorrelation_bank[tmp, :] = normalized_crosscorr(
-                h_full_pad, u_rev_pad, autocorrelation_length)
-
-            # save the overlap of spiir reconstructed waveform with the cut template
-            self.matches.append(spiir_match)
-            # also take into account that spiir approximant not matching 100% of the original waveform
-            self.sigmasq.append(this_sigmasq * spiir_match * spiir_match)
-
-            if verbose:
-                logging.info(
-                    "template %4.0d/%4.0d, m1 = %10.6f m2 = %10.6f, epsilon = %1.4f:  %4.0d filters, %10.8f match. original_eps = %1.4f: %4.0d filters, %10.8f match"
-                    % (tmp + 1, len(self.sngl_inspiral_table), row.mass1,
-                       row.mass2, epsilon, n_filters, spiir_match,
-                       epsilon_start, original_filters, original_match))
-
-            # get the filter frequencies
-            fs = -1. * numpy.angle(a1) / 2 / numpy.pi  # Normalised freqeuncy
-            a1dict = {}
-            b0dict = {}
-            delaydict = {}
-
-            if downsample:
-                min_M = 1
-                max_M = int(2**numpy.floor(numpy.log2(sampleRate / flower)))
-                # iterate over the frequencies and put them in the right downsampled bin
-                for i, f in enumerate(fs):
-                    M = int(
-                        max(min_M, 2**-numpy.ceil(numpy.log2(
-                            f * 2.0 * padding))))  # Decimation factor
-                    M = max(min_M, M)
-
-                    if M > max_M:
-                        continue
-
-                    a1dict.setdefault(sampleRate / M, []).append(a1[i]**M)
-                    newdelay = numpy.ceil((delay[i] + 1) / (float(M)))
-                    b0dict.setdefault(sampleRate / M, []).append(
-                        b0[i] * M**0.5 * a1[i]**(newdelay * M - delay[i]))
-                    delaydict.setdefault(sampleRate / M, []).append(newdelay)
-                #logging.info("sampleRate %4.0d, filter %3.0d, M %2.0d, f %10.9f, delay %d, newdelay %d" % (sampleRate, i, M, f, delay[i], newdelay))
-            else:
-                a1dict[int(sampleRate)] = a1
-                b0dict[int(sampleRate)] = b0
-                delaydict[int(sampleRate)] = delay
-
-            # store the coeffs
-            for k in a1dict.keys():
-                Amat.setdefault(k, []).append(a1dict[k])
-                Bmat.setdefault(k, []).append(b0dict[k])
-                Dmat.setdefault(k, []).append(delaydict[k])
+                # store the coeffs
+                for k in a1dict.keys():
+                    Amat.setdefault(k, []).append(a1dict[k])
+                    Bmat.setdefault(k, []).append(b0dict[k])
+                    Dmat.setdefault(k, []).append(delaydict[k])
 
         max_rows = max([len(Amat[rate]) for rate in Amat.keys()])
         for rate in Amat.keys():
@@ -1550,3 +1625,5 @@ def get_maxrate_from_xml(filename,
         ]
 
     return max(sample_rates)
+
+
