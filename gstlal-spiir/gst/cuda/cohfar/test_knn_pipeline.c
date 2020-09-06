@@ -144,7 +144,7 @@ void getTemp(int *tempPtr, float *histgt0Ptr) {
     }
     //	tempPtr = {2 5 7 9 11 15 16 18 20 22 29 31 35}
     //	histgt0Ptr = {0.0714 0.0714 0.0714 0.0714 0.0714 0.0714 0.0714 0.0714
-    //0.0714 0.0714 0.0714 0.0714 0.1429 }
+    // 0.0714 0.0714 0.0714 0.0714 0.1429 }
 }
 
 void getHistaxis(int *tempPtr, int **histaxisPtr) {
@@ -217,7 +217,7 @@ void getHwidth(float *kthDistPtr, float GlobalHband, float *hwidthPtr) {
     //	For K=2
     //	kthDistPtr =
     //{1.4142 1.0000 1.4142 1.0000 1.0000 1.0000 1.0000 2.0000 1.4142 1.0000 1.0000
-    //2.2361 1.0000}
+    // 2.2361 1.0000}
 }
 
 void getPDF(float *hwidthPtr, float *histgt0Ptr, int **histaxisPtr) {
