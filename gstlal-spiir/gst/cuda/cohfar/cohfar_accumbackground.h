@@ -32,8 +32,8 @@
 #include <glib.h>
 #include <gst/base/gstbasetransform.h>
 #include <gst/gst.h>
-#include <postcohtable.h>
 #include <libxml/xmlwriter.h>
+#include <postcohtable.h>
 
 G_BEGIN_DECLS
 #define COHFAR_ACCUMBACKGROUND_TYPE (cohfar_accumbackground_get_type())
@@ -59,7 +59,7 @@ typedef struct {
 
     char *ifos;
     int nifo;
-    int ncombo; // ifo combination
+    int icombo; // ifo combination
     int write_ifo_mapping[MAX_NIFO];
     TriggerStatsXML *bgstats;
     TriggerStatsXML *zlstats;
