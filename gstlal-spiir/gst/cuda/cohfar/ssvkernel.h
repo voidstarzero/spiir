@@ -19,7 +19,7 @@
 // y_hist_result: one-dimensional histogram
 // result: a L*L matrix. result(i,j) =
 // count(Bin_i)/h(x_j)*K[x-point(Bin_i)/h(x_j)] (each variable's meaning: see
-//document of 'Shimazaki’s method' part.).
+// document of 'Shimazaki’s method' part.).
 //
 
 // int main()

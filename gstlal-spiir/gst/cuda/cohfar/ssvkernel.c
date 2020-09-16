@@ -39,7 +39,7 @@
 // y_hist_result: one-dimensional histogram
 // result: a L*L matrix. result(i,j) =
 // count(Bin_i)/h(x_j)*K[x-point(Bin_i)/h(x_j)] (each variable's meaning: see
-//document of 'Shimazaki’s method' part.).
+// document of 'Shimazaki’s method' part.).
 //
 
 // int main()
@@ -282,7 +282,8 @@ double CostFunction(gsl_vector *y_hist,
     //	for (i = 0; i < y_hist->size; i++) {
     //		if (gsl_vector_get(y_hist, i) != 0) {
     //			gsl_vector_set(y_hist_nz, idx, gsl_vector_get(y_hist,
-    //i)); 			gsl_vector_set(t_nz, idx, gsl_vector_get(t, i)); 			idx++;
+    // i)); 			gsl_vector_set(t_nz, idx, gsl_vector_get(t, i));
+    // idx++;
     //		}
     //	}
     //
@@ -905,8 +906,8 @@ void ssvkernel(gsl_vector *x,
     //		gsl_vector * xb = gsl_vector_alloc(Nb);
     //		for (j = 0; j < Nb; j++) {
     //			gsl_vector_set(xb, j,
-    //					gsl_vector_get(x_ab, floor(gsl_ran_flat(r, 0,
-    //N))));
+    //					gsl_vector_get(x_ab, floor(gsl_ran_flat(r,
+    //0, N))));
     //		}
     //
     //		gsl_vector_histc(xb, t_dt2, y_histb);
@@ -923,7 +924,8 @@ void ssvkernel(gsl_vector *x,
     //		for (j = 0; j < tin->size; j++) {
     //			gsl_matrix_set(yb, i, j,
     //					gsl_interp_eval(linear, t->data,
-    //yb_buf->data, 							gsl_vector_get(tin, j), acc));
+    // yb_buf->data, 							gsl_vector_get(tin, j),
+    // acc));
     //		}
     //		gsl_vector_free(xb);
     //	}
@@ -934,8 +936,8 @@ void ssvkernel(gsl_vector *x,
     //		gsl_sort_vector(yb_col);
     //		gsl_vector_set(lower_bound, i,
     //				gsl_vector_get(yb_col, floor((1 - confidence) *
-    //nbs))); 		gsl_vector_set(upper_bound, i, 				gsl_vector_get(yb_col,
-    //floor((confidence) * nbs)));
+    // nbs))); 		gsl_vector_set(upper_bound, i,
+    // gsl_vector_get(yb_col, floor((confidence) * nbs)));
     //	}
     //	gsl_interp_init(linear, t->data, yv->data, t->size);
     //	for (i = 0; i < tin->size; i++) {

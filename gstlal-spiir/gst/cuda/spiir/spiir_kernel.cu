@@ -332,8 +332,8 @@ __global__ void cuda_iir_filter_kernel(COMPLEX8_F *cudaA1,
         for (i = 0; i < step_points; i += nb) {
             for (j = 0; j < nb; ++j) {
                 // data = 0.01f;
-                // data = tex1Dfetch(texRef, shift+i+j);		//use texture,
-                // abandon now
+                // data = tex1Dfetch(texRef, shift+i+j);		//use
+                // texture, abandon now
                 data              = cudaData[shift + i + j];
                 fltrOutptReal[tx] = a1.re * previousSnr.re
                                     - a1.im * previousSnr.im + b0.re * data;
