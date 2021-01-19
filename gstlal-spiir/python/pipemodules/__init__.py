@@ -112,6 +112,11 @@ def mkcudamultiratespiir(pipeline,
                                **properties)
     return elem
 
+def mktrigger_jointer(pipeline,
+		head):
+    elem = gst.element_factory_make("trigger_jointer")
+    pipeline.add(elem)
+    return elem
 
 def mkcudapostcoh(pipeline,
                   snr,
@@ -173,7 +178,6 @@ def mkcohfar_accumbackground(pipeline,
     if output_name is not None:
         properties["output_name"] = output_name
 
-    print("source type %d" % source_type)
     if "name" in properties:
         elem = gst.element_factory_make("cohfar_accumbackground",
                                         properties.pop("name"))
