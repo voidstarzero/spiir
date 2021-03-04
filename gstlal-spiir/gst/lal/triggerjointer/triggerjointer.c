@@ -656,7 +656,8 @@ trigger_jointer_append_coinc_snr(TriggerJointer *jointer,
     GstBuffer *buf = NULL;
 	COMPLEX_F *snglsnr;
     GstFlowReturn ret = GST_FLOW_OK;
-	float one_take_dur = GST_BUFFER_DURATION(postcoh_buf)/GST_SECOND;
+    /* promote the type to double, otherwise it will be interger */
+	float one_take_dur = ((double)GST_BUFFER_DURATION(postcoh_buf))/GST_SECOND; 
 	gint one_take_size = 0;
 	gboolean is_gap;
 	int one_ifo_size = sizeof(gchar) * IFO_LEN, len_ifos = 0, nifo = 0, pad_loc = 0;
@@ -673,13 +674,19 @@ trigger_jointer_append_coinc_snr(TriggerJointer *jointer,
     for (snrdata = jointer->collect_snrdata; snrdata;
          snrdata = g_slist_next(snrdata)) {
 		data = snrdata->data;
-		/* get the C pointer to point to the SNR matrix */
-		one_take_size = one_take_dur * data->bps;
-	    snglsnr = (COMPLEX_F *) gst_adapter_peek(data->adapter, one_take_size);
+		one_take_size = one_take_dur * data->rate * data->bps; // bps: bypes per sample
 		GST_DEBUG_OBJECT(jointer, "process snr data size %d, start time %" GST_TIME_FORMAT
 				", end time %" GST_TIME_FORMAT, one_take_size, GST_TIME_ARGS(jointer->tstart)
 				, GST_TIME_ARGS(jointer->next_tstart));
 
+		/* if no triggers, then just flush the snrs */
+		if (GST_BUFFER_SIZE(postcoh_buf) == 0) { 
+			gst_adapter_flush(data->adapter, one_take_size);
+			continue;
+		}
+
+		/* get the C pointer to point to the SNR matrix */
+	    snglsnr = (COMPLEX_F *) gst_adapter_peek(data->adapter, one_take_size);
 		/* no data in adapter, do nothing */
 		if (snglsnr == NULL)
 			continue;
@@ -729,6 +736,7 @@ trigger_jointer_append_coinc_snr(TriggerJointer *jointer,
 					this_sample, tmplt_idx, this_snr.re, this_snr.im, 
 					sqrt(this_snr.re*this_snr.re + this_snr.im*this_snr.im));
 		}
+		gst_adapter_flush(data->adapter, one_take_size);
 	}
 	return ret;
 }
@@ -762,11 +770,11 @@ trigger_jointer_process(GstCollectPads *pads,
 		if (!buf && data->is_snr == 1) 
 			continue;
 
-		/* has postcoh buffer */
+		/* is a postcoh buffer */
         if (buf && data->is_snr == 0) { 
 			jointer->is_next_tstart_set = FALSE;
 			postcoh_buf = buf;
-		} else {/* has snr buffer, add flag segment and push to adapter and */
+		} else {/* is a snr buffer, add flag segment and push to adapter and */
             is_gap =
               GST_BUFFER_FLAG_IS_SET(buf, GST_BUFFER_FLAG_GAP) ? TRUE : FALSE;
 			buf_start = GST_BUFFER_TIMESTAMP(buf);
@@ -863,8 +871,8 @@ static GstFlowReturn collected(GstCollectPads *pads, gpointer user_data) {
 			jointer->is_next_tstart_set = TRUE;
 		}
         if (trigger_jointer_need_recollect(pads, jointer)) 
-			/* snr pad does not have enough buffers to cover expected end time,
-			 * recollect buffers */
+			/* snr pads do not have enough buffers to cover expected end time,
+			 * recollect snr buffers */
 			return GST_FLOW_OK;
 		/* process, append each trigger with coinc snr and push downstream */
         ret = trigger_jointer_process(pads, jointer);
