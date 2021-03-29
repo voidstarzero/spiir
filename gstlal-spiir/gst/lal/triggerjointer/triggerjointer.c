@@ -28,6 +28,11 @@
 #include <triggerjointer/triggerjointer.h>
 #include <math.h>
 
+/* ceil the maximum time lag to the second digit. max time lag from find_timelag.py code in 
+ * gst/lal/triggerjointer/test/ */
+#define V1_TIMELAG 28000000
+#define K1_TIMELAG 33000000
+
 #define GST_CAT_DEFAULT triggerjointer_debug
 GST_DEBUG_CATEGORY_STATIC(GST_CAT_DEFAULT);
 
@@ -58,22 +63,22 @@ static gboolean need_flag_gap(TriggerJointerCollectData *data,
     FlagSegment *this_segment =
       &((FlagSegment *)flag_segments->data)[flag_segments->len - 1];
     /* make sure the last segment always later than the outbuf */
-	if (this_segment->stop < stop) {
-		GST_DEBUG_OBJECT(data, "segment flag invalid this segment stop %" GST_TIME_FORMAT
-				", required stop %" GST_TIME_FORMAT, GST_TIME_ARGS(this_segment->stop),
-				GST_TIME_ARGS(stop));
-	}
+    if (this_segment->stop < stop) {
+        GST_DEBUG_OBJECT(data, "segment flag invalid this segment stop %" GST_TIME_FORMAT
+                ", required stop %" GST_TIME_FORMAT, GST_TIME_ARGS(this_segment->stop),
+                GST_TIME_ARGS(stop));
+    }
     g_assert(this_segment->stop >= stop);
 
     for (i = 0; i < flag_segments->len; i++) {
         this_segment = &((FlagSegment *)flag_segments->data)[i];
-        /*		| start				| stop
-         *									| this_start
+        /*        | start                | stop
+         *                                    | this_start
          *(1) | s | e (2)
-         * | s							| e
-         * | s		| e
+         * | s                            | e
+         * | s        | e
          *            |s | e
-         *            |s				| e
+         *            |s                | e
          */
         if (this_segment->start >= stop) break;
         if (this_segment->stop <= start) {
@@ -90,12 +95,12 @@ static gboolean need_flag_gap(TriggerJointerCollectData *data,
             dur_gap += this_segment->is_gap ? this_segment->stop - start : 0;
             continue;
         }
+        
         if (this_segment->start > start && this_segment->stop <= stop) {
-            dur_gap += this_segment->is_gap
-                         ? this_segment->stop - this_segment->start
-                         : 0;
+            dur_gap += this_segment->is_gap ? this_segment->stop - this_segment->start : 0;
             continue;
         }
+
         if (this_segment->start > start && this_segment->stop > stop) {
             dur_gap += this_segment->is_gap ? stop - this_segment->start : 0;
             continue;
@@ -160,17 +165,17 @@ static GstStaticPadTemplate trigger_jointer_postcoh_sink_template = GST_STATIC_P
         GST_PAD_SINK,
         GST_PAD_REQUEST,
         GST_STATIC_CAPS("application/x-lal-postcoh")
-		);
+        );
 
 static GstStaticPadTemplate trigger_jointer_snr_sink_template = GST_STATIC_PAD_TEMPLATE ("snr_%s", // name read from python link_pads function
         GST_PAD_SINK,
         GST_PAD_REQUEST,
-		GST_STATIC_CAPS("audio/x-raw-float, "
+        GST_STATIC_CAPS("audio/x-raw-float, "
                        "rate = (int) [1, MAX], "
                        "channels = (int) [1, MAX], "
                        "endianness = (int) BYTE_ORDER, "
                        "width = (int) 32")
-		);
+        );
 
 /* copied from trigger_jointer plugin
  * forwards the event to all sinkpads, takes ownership of the event
@@ -315,8 +320,8 @@ sink_event(GstPad *pad, GstEvent *event) {
 
 static void destroy_notify(TriggerJointerCollectData *data) {
     if (data) {
-		if (data->ifo_name)
-			free(data->ifo_name);
+        if (data->ifo_name)
+            free(data->ifo_name);
         if (data->adapter) {
             gst_adapter_clear(data->adapter);
             g_object_unref(data->adapter);
@@ -329,33 +334,52 @@ static void destroy_notify(TriggerJointerCollectData *data) {
     }
 }
 
+static int
+get_max_timelag(gchar *ifo) {
+	if (strncmp(ifo, "V1", IFO_LEN) == 0)
+		return V1_TIMELAG;
+	else if (strncmp(ifo, "K1", IFO_LEN) == 0)
+		return K1_TIMELAG;
+	else
+		return -1;
+}
+
 static gboolean
 trigger_jointer_set_snr_info(TriggerJointer *jointer) {
-	GList *snrdata;
-	GstCaps *caps;
-	GstStructure *s;
-	GstPad *this_pad;
-	TriggerJointerCollectData *data;
+    GList *snrdata;
+    GstCaps *caps;
+    GstStructure *s;
+    GstPad *this_pad;
+    TriggerJointerCollectData *data;
+	int max_timelag;
 
    for (snrdata = jointer->collect_snrdata; snrdata;
          snrdata = g_slist_next(snrdata)) {
-		data = snrdata->data;
-		/* data->data is the GstCollectData, it has its managed pad */
-		this_pad = (GstPad *)((data->data).pad);
-		caps = GST_PAD_CAPS(this_pad);
+        data = snrdata->data;
+        /* data->data is the GstCollectData, it has its managed pad */
+        this_pad = (GstPad *)((data->data).pad);
+        caps = GST_PAD_CAPS(this_pad);
         GST_DEBUG_OBJECT(jointer, "getting caps on pad %p of %s: %" GST_PTR_FORMAT,
                    this_pad, GST_PAD_NAME(this_pad), caps);
 
-		/* get the caps out */
-		s = gst_caps_get_structure(caps, 0);
-		gst_structure_get_int(s, "width", &data->width);
+        /* get the caps out */
+        s = gst_caps_get_structure(caps, 0);
+        gst_structure_get_int(s, "width", &data->width);
         gst_structure_get_int(s, "rate", &data->rate);
         gst_structure_get_int(s, "channels", &data->channels);
 
-	    /* bytes per sample */
+        /* bytes per sample */
         data->bps                   = (data->width / 8) * data->channels;
-        GST_DEBUG_OBJECT(jointer, "get ifo_name %s, ifo_mapping %d,rate %d, channels %d, bps %d",
-			data->ifo_name, data->ifo_mapping, data->rate, data->channels, data->bps);
+        /* timelag in number of samples */
+		max_timelag = get_max_timelag(data->ifo_name);
+		if (max_timelag == -1) {
+			fprintf(stderr, "Can not get max time lag of this detector, exiting\n");
+			exit(0);
+		}
+        data->ntimelag = floor(max_timelag/(double)GST_SECOND * data->rate);
+        GST_DEBUG_OBJECT(jointer, "get ifo_name %s, ifo_mapping %d,rate %d, channels %d, bps %d,"
+                "timelag in nsamples %d",
+            data->ifo_name, data->ifo_mapping, data->rate, data->channels, data->bps, data->ntimelag);
    }
    return TRUE;
 }
@@ -372,7 +396,7 @@ trigger_jointer_request_new_pad(GstElement *element, GstPadTemplate *templ, cons
     /* add the newpad to the element */
     if (!gst_element_add_pad(element, newpad)) {
         gst_object_unref(newpad);
-		GST_DEBUG_OBJECT(element, "add %s pad faied", req_name);
+        GST_DEBUG_OBJECT(element, "add %s pad faied", req_name);
         return NULL;
     }
     /* set the sink event function for the new pad */
@@ -380,7 +404,7 @@ trigger_jointer_request_new_pad(GstElement *element, GstPadTemplate *templ, cons
     gst_pad_set_event_function(newpad, sink_event);
 
     /* add the new pad to the collect pads 
-	 * and initialize the pad data */
+     * and initialize the pad data */
     TriggerJointerCollectData *data;
     data = (TriggerJointerCollectData *)gst_collect_pads_add_pad_full(
             jointer->collect, newpad, sizeof(TriggerJointerCollectData),
@@ -388,24 +412,24 @@ trigger_jointer_request_new_pad(GstElement *element, GstPadTemplate *templ, cons
 
     if (!data) {
         gst_element_remove_pad(element, newpad);
-		GST_DEBUG_OBJECT(element, "get the collect data faied for %s", req_name);
+        GST_DEBUG_OBJECT(element, "get the collect data faied for %s", req_name);
         gst_object_unref(newpad);
         return NULL;
     }
-	/* alignment flag for start time */
+    /* alignment flag for start time */
     data->is_aligned      = FALSE;
     data->aligned_offset0 = 0;
     data->next_offset     = 0;
 
-	int j;
-	/* new pad data: check if the data is snr series or table
-	 * req_name for snr series is snr_%02s */
-	if (strlen(req_name) == 6) {
-		jointer->collect_snrdata = g_slist_append(jointer->collect_snrdata, data);
+    int j;
+    /* new pad data: check if the data is snr series or table
+     * req_name for snr series is snr_%02s */
+    if (strlen(req_name) == 6) {
+        jointer->collect_snrdata = g_slist_append(jointer->collect_snrdata, data);
         data->is_snr = 1;
-	    /* adapter to store the SNR series */
+        /* adapter to store the SNR series */
         data->adapter         = gst_adapter_new();
-	    /* gap segments */
+        /* gap segments */
         data->flag_segments   = g_array_new(FALSE, FALSE, sizeof(FlagSegment));
         data->ifo_name = (gchar *)malloc(IFO_LEN * sizeof(gchar));
         strncpy(data->ifo_name, req_name+4, sizeof(data->ifo_name));
@@ -413,29 +437,29 @@ trigger_jointer_request_new_pad(GstElement *element, GstPadTemplate *templ, cons
             if (strncmp(data->ifo_name, IFOMap[j].name, IFO_LEN)
                 == 0) 
                 data->ifo_mapping = j;
-		}
-	} else {
-		jointer->collect_postcohdata = data;
-		data->is_snr = 0;
+        }
+    } else {
+        jointer->collect_postcohdata = data;
+        data->is_snr = 0;
         GST_DEBUG_OBJECT(element, "set postcoh collect data");
-	}
+    }
 
     GST_DEBUG_OBJECT(element, "new pad for %s is added and initialized, it is %s SNR series",
                      req_name, data->is_snr ? "a": "NOT");
-	return GST_PAD(newpad);
+    return GST_PAD(newpad);
 }
 
 /* release the new pad when pipeline stops */
 static void
 trigger_jointer_release_pad(GstElement *element, GstPad *pad) {
     TriggerJointer *jointer = TRIGGER_JOINTER(element);
-	/* remove from collect pads */
+    /* remove from collect pads */
     gst_collect_pads_remove_pad(jointer->collect, pad);
-	/* remove from snr pads */
-	jointer->collect_snrdata = g_slist_remove(jointer->collect_snrdata, pad);
-	/* remove from element */
+    /* remove from snr pads */
+    jointer->collect_snrdata = g_slist_remove(jointer->collect_snrdata, pad);
+    /* remove from element */
     gst_element_remove_pad(element, pad);
-	/* free data->ifo_name */
+    /* free data->ifo_name */
 }
 
 /* get the time from the postcoh table pad for synchronization */
@@ -477,14 +501,14 @@ static gboolean
         gst_buffer_unref(buf);
         return FALSE;
     }
-	/* set the start time from the postcoh table buffer */
+    /* set the start time from the postcoh table buffer */
     *tstart = GST_BUFFER_TIMESTAMP(buf);
     *tend = GST_BUFFER_TIMESTAMP(buf) + GST_BUFFER_DURATION(buf);
     *offset_start = GST_BUFFER_OFFSET(buf);
     gst_buffer_unref(buf);
 
-	/* sanity check */
-	g_assert(*tstart != GST_CLOCK_TIME_NONE);
+    /* sanity check */
+    g_assert(*tstart != GST_CLOCK_TIME_NONE);
     return TRUE;
 }
 
@@ -509,17 +533,17 @@ static gboolean trigger_jointer_align_collected(GstCollectPads *pads,
              * aligned */
             // buf = gst_collect_pads_pop(pads, (GstCollectData *)data);
             // gst_adapter_push(data->adapter, buf);
-			GST_DEBUG_OBJECT(data, "already aligned %s", data->is_snr? "SNR pad": "postcoh pad");
+            GST_DEBUG_OBJECT(data, "already aligned %s", data->is_snr? "SNR pad": "postcoh pad");
             continue;
         }
-		/* postcoh table buffer, set TRUE to is_aligned */
-		if (data->is_snr == 0 && data->is_aligned == FALSE) {
-			GST_DEBUG_OBJECT(data, "set postcoh pad to aligned");
-			data->is_aligned = TRUE;
-			continue;
-		}
+        /* postcoh table buffer, set TRUE to is_aligned */
+        if (data->is_snr == 0 && data->is_aligned == FALSE) {
+            GST_DEBUG_OBJECT(data, "set postcoh pad to aligned");
+            data->is_aligned = TRUE;
+            continue;
+        }
 
-		/* only align buffers from snr pads to the t0 from the postcoh pad buffer */
+        /* only align buffers from snr pads to the t0 from the postcoh pad buffer */
         buf            = gst_collect_pads_pop(pads, (GstCollectData *)data);
         t_start_cur    = GST_BUFFER_TIMESTAMP(buf);
         t_end_cur      = t_start_cur + GST_BUFFER_DURATION(buf);
@@ -564,10 +588,10 @@ static gboolean trigger_jointer_align_collected(GstCollectPads *pads,
             gst_buffer_unref(buf);
         } else {
             all_aligned = FALSE;
-			GST_DEBUG_OBJECT(jointer, "snr pad not aligned, this buf end time %" GST_TIME_FORMAT 
-					", need t0 %" GST_TIME_FORMAT ", wait for next turn", 
-					GST_TIME_ARGS(GST_BUFFER_TIMESTAMP(buf)),
-					GST_TIME_ARGS(jointer->t0));
+            GST_DEBUG_OBJECT(jointer, "snr pad not aligned, this buf end time %" GST_TIME_FORMAT 
+                    ", need t0 %" GST_TIME_FORMAT ", wait for next turn", 
+                    GST_TIME_ARGS(GST_BUFFER_TIMESTAMP(buf)),
+                    GST_TIME_ARGS(jointer->t0));
             gst_buffer_unref(buf);
         }
     }
@@ -580,16 +604,18 @@ trigger_jointer_set_next_tstart(GstCollectPads *pads,
 
     TriggerJointerCollectData *data;
     GstBuffer *buf          = NULL;
-	/* get the tstart from the current postcoh buffer queued in postcoh pad */
+    /* get the tstart from the current postcoh buffer queued in postcoh pad */
     buf  = gst_collect_pads_peek(jointer->collect, (GstCollectData *)jointer->collect_postcohdata);
 
     if (buf != NULL) { // != if(buf)
-		jointer->tstart = GST_BUFFER_TIMESTAMP(buf);
-        jointer->next_tstart = GST_BUFFER_TIMESTAMP(buf) + GST_BUFFER_DURATION(buf);
+        jointer->tstart = GST_BUFFER_TIMESTAMP(buf);
+        /* need to account for 10ms time lag */
+        jointer->next_tstart = GST_BUFFER_TIMESTAMP(buf) + GST_BUFFER_DURATION(buf) + 
+            jointer->max_timelag;
         gst_buffer_unref(buf);
-	}
-	GST_DEBUG_OBJECT(jointer, "next t start %" GST_TIME_FORMAT ", next t end %" GST_TIME_FORMAT,
-			GST_TIME_ARGS(jointer->tstart), GST_TIME_ARGS(jointer->next_tstart));
+    }
+    GST_DEBUG_OBJECT(jointer, "next t start %" GST_TIME_FORMAT ", next t end %" GST_TIME_FORMAT,
+            GST_TIME_ARGS(jointer->tstart), GST_TIME_ARGS(jointer->next_tstart));
     /* do nothing if it is null buffer */
     return TRUE;
 }
@@ -601,12 +627,12 @@ static gboolean trigger_jointer_need_recollect(GstCollectPads *pads,
     GSList *snrdata;
     TriggerJointerCollectData *data;
     GstBuffer *buf          = NULL;
-	GstClockTime buf_end;
+    GstClockTime buf_end;
     gboolean need_recollect = FALSE, is_gap;
  
     for (snrdata = jointer->collect_snrdata; snrdata;
          snrdata = g_slist_next(snrdata)) {
-		data = snrdata->data;
+        data = snrdata->data;
         buf  = gst_collect_pads_peek(pads, (GstCollectData *)data);
         if (buf != NULL) { // != if(buf)
             /* zerobuf remove it */
@@ -621,8 +647,8 @@ static gboolean trigger_jointer_need_recollect(GstCollectPads *pads,
                 continue;
             }
             buf_end = GST_BUFFER_TIMESTAMP(buf) + GST_BUFFER_DURATION(buf);
-	        if (buf_end < jointer->next_tstart) {
-				/* not enough data */
+            if (buf_end < jointer->next_tstart) {
+                /* not enough data */
                 /* dump this buffer in collectpads adaptor so it can collect new
                  * one */
                 gst_buffer_unref(buf);
@@ -637,10 +663,10 @@ static gboolean trigger_jointer_need_recollect(GstCollectPads *pads,
                 need_recollect = TRUE;
                 continue;
             } else
-				/* enough buffer, proceed to process function */
-				GST_DEBUG_OBJECT(jointer, "enough data in snr pad, proceed to process");
-				gst_buffer_unref(buf);
-		}
+                /* enough buffer, proceed to process function */
+                GST_DEBUG_OBJECT(jointer, "enough data in snr pad, proceed to process");
+                gst_buffer_unref(buf);
+        }
         /* do nothing if it is null buffer */
     }
     return need_recollect;
@@ -649,164 +675,203 @@ static gboolean trigger_jointer_need_recollect(GstCollectPads *pads,
 
 static GstFlowReturn
 trigger_jointer_append_coinc_snr(TriggerJointer *jointer,
-		GstBuffer *postcoh_buf) {
+        GstBuffer *postcoh_buf) {
 
-	GSList *snrdata;
+    GSList *snrdata;
     TriggerJointerCollectData *data;
     GstBuffer *buf = NULL;
-	COMPLEX_F *snglsnr;
+    COMPLEX_F *snglsnr;
     GstFlowReturn ret = GST_FLOW_OK;
     /* promote the type to double, otherwise it will be interger */
-	float one_take_dur = ((double)GST_BUFFER_DURATION(postcoh_buf))/GST_SECOND; 
-	gint one_take_size = 0;
-	gboolean is_gap;
-	int one_ifo_size = sizeof(gchar) * IFO_LEN, len_ifos = 0, nifo = 0, pad_loc = 0;
-	LIGOTimeGPS cur_buftime;
-	XLALINT8NSToGPS(&cur_buftime, jointer->tstart);
+    float exe_dur = ((double)GST_BUFFER_DURATION(postcoh_buf))/GST_SECOND; 
+    gint exe_size = 0, one_take_size = 0;
+    gboolean is_gap;
+    int one_ifo_size = sizeof(gchar) * IFO_LEN, len_ifos = 0, nifo = 0, pad_loc = 0;
+    LIGOTimeGPS cur_buftime;
+    XLALINT8NSToGPS(&cur_buftime, jointer->tstart);
 
-	int tmplt_idx, this_sample;
-	float this_sec, this_nano;
+    int tmplt_idx, this_sample;
+    float this_sec, this_nano;
 
-	PostcohInspiralTable *trigger = (PostcohInspiralTable *) GST_BUFFER_DATA(postcoh_buf);
+    PostcohInspiralTable *trigger = (PostcohInspiralTable *) GST_BUFFER_DATA(postcoh_buf);
     PostcohInspiralTable *trigger_end =
       (PostcohInspiralTable *)(GST_BUFFER_DATA(postcoh_buf) + GST_BUFFER_SIZE(postcoh_buf));
  
     for (snrdata = jointer->collect_snrdata; snrdata;
          snrdata = g_slist_next(snrdata)) {
-		data = snrdata->data;
-		one_take_size = one_take_dur * data->rate * data->bps; // bps: bypes per sample
-		GST_DEBUG_OBJECT(jointer, "process snr data size %d, start time %" GST_TIME_FORMAT
-				", end time %" GST_TIME_FORMAT, one_take_size, GST_TIME_ARGS(jointer->tstart)
-				, GST_TIME_ARGS(jointer->next_tstart));
+        data = snrdata->data;
+        exe_size = round(exe_dur * data->rate * data->bps);
+        one_take_size = exe_size + data->ntimelag * 2 * data->bps; // bps: bypes per sample
+        GST_DEBUG_OBJECT(jointer, "process snr peek size %d, exe_size %d, start time %"
+                GST_TIME_FORMAT ", end time %" GST_TIME_FORMAT , one_take_size, exe_size, 
+                GST_TIME_ARGS(jointer->tstart), GST_TIME_ARGS(jointer->next_tstart));
 
-		/* if no triggers, then just flush the snrs */
-		if (GST_BUFFER_SIZE(postcoh_buf) == 0) { 
-			gst_adapter_flush(data->adapter, one_take_size);
-			continue;
-		}
+        /* if no triggers, then just flush the snrs */
+        if (GST_BUFFER_SIZE(postcoh_buf) == 0) { 
+            gst_adapter_flush(data->adapter, exe_size);
+            continue;
+        }
 
-		/* get the C pointer to point to the SNR matrix */
-	    snglsnr = (COMPLEX_F *) gst_adapter_peek(data->adapter, one_take_size);
-		/* no data in adapter, do nothing */
-		if (snglsnr == NULL)
-			continue;
+        /* get the C pointer to point to the SNR matrix */
+        snglsnr = (COMPLEX_F *) gst_adapter_peek(data->adapter, one_take_size);
+        /* no data in adapter, do nothing */
+        if (snglsnr == NULL)
+            continue;
 
-		/*
-		 * check if this period of data is gap data
-		 * if gap, flush this data and move on
-		 */
-		is_gap = need_flag_gap(data, jointer->tstart, jointer->next_tstart);
+        /*
+         * check if this period of data is gap data
+         * if gap, flush this data and move on
+         */
+        is_gap = need_flag_gap(data, jointer->tstart, jointer->next_tstart);
 
-		if (is_gap) {
-			/* flush the SNR matrix from the adapter */
-			gst_adapter_flush(data->adapter, one_take_size);
-			GST_DEBUG_OBJECT(jointer, "the snr buffer is a gap, flush it from adapter");
-			continue;
-		}
+        if (is_gap) {
+            /* flush the SNR matrix from the adapter */
+            gst_adapter_flush(data->adapter, exe_size);
+            GST_DEBUG_OBJECT(jointer, "the snr buffer is a gap, flush it from adapter");
+            continue;
+        }
 
-		/* not a gap, extend the trigger field ifos with the new ifo */
-		if (trigger->ifos) {
-			len_ifos = strlen(trigger->ifos);
-			nifo = len_ifos/IFO_LEN;
-			pad_loc = len_ifos + IFO_LEN;
-		}
+        /* not a gap, extend the trigger field ifos with the new ifo */
+        if (trigger->ifos) {
+            len_ifos = strlen(trigger->ifos);
+            nifo = len_ifos/IFO_LEN;
+            pad_loc = len_ifos + IFO_LEN;
+        }
 
-		/* find the coinc snr from tmplt idx
-		 * and time idx */
-		COMPLEX_F this_snr;
-		for (; trigger < trigger_end; trigger++) {
-			/* not a zerolag trigger but an entry
-			 * just to indicate ifos */
-			if (trigger->is_background != FLAG_FOREGROUND) 
-				continue;
-			/* inserting the IFO into the IFO list */
-			strncpy(trigger->ifos + len_ifos, data->ifo_name, one_ifo_size);
-			trigger->ifos[pad_loc] = '\0';
-			/* find the sample corresponding to the end_time of the trigger */
-			this_sec = trigger->end_time.gpsSeconds - cur_buftime.gpsSeconds;
-			this_nano = trigger->end_time.gpsNanoSeconds - cur_buftime.gpsNanoSeconds;
-			this_sample = (int)((this_sec + (float)(this_nano)/1e9) * data->rate);
-			/* find the tmplt idx of the trigger */
-			tmplt_idx = trigger->tmplt_idx;
-			this_snr = snglsnr[tmplt_idx * data->channels + this_sample];
-			trigger->snglsnr[data->ifo_mapping] = sqrt(this_snr.re*this_snr.re + this_snr.im*this_snr.im);
-			trigger->coaphase[data->ifo_mapping] = atan2(this_snr.im, this_snr.im*this_snr.re);
-			GST_DEBUG_OBJECT(jointer, "new ifos -> %s, this ifo %d, sample %d, tmplt_idx %d,"
-					"new ifo snr.re %f, snr.im %f, snr %f", trigger->ifos, data->ifo_mapping, 
-					this_sample, tmplt_idx, this_snr.re, this_snr.im, 
-					sqrt(this_snr.re*this_snr.re + this_snr.im*this_snr.im));
-		}
-		gst_adapter_flush(data->adapter, one_take_size);
-	}
-	return ret;
+        /* find the coinc snr from tmplt idx
+         * and time idx */
+        int isample, max_isample = 0;
+        COMPLEX_F this_snr;
+        float max_abs_snr = 0, this_abs_snr;
+        LIGOTimeGPS end_time;
+        for (; trigger < trigger_end; trigger++) {
+            /* not a zerolag trigger but an entry
+             * just to indicate ifos */
+            if (trigger->is_background != FLAG_FOREGROUND) 
+                continue;
+            max_abs_snr = 0;
+            /* inserting the IFO into the IFO list */
+            strncpy(trigger->ifos + len_ifos, data->ifo_name, one_ifo_size);
+            trigger->ifos[pad_loc] = '\0';
+            /* find the sample corresponding to the end_time of the trigger */
+            this_sec = trigger->end_time.gpsSeconds - cur_buftime.gpsSeconds;
+            this_nano = trigger->end_time.gpsNanoSeconds - cur_buftime.gpsNanoSeconds;
+            this_sample = (int)((this_sec + (float)(this_nano)/GST_SECOND) * data->rate);
+            /* find the tmplt idx of the trigger */
+            tmplt_idx = trigger->tmplt_idx;
+            /* find the maximum SNR within the [+- 10ms] of the triggering time */
+            for (isample = 0; isample < 2*data->ntimelag; isample++) {
+                this_snr = snglsnr[data->channels/2 * (this_sample+isample) + tmplt_idx];
+                this_abs_snr = sqrt(this_snr.re*this_snr.re + this_snr.im*this_snr.im);
+                if (this_abs_snr > max_abs_snr) {
+                    max_isample = isample;
+                    max_abs_snr = this_abs_snr;
+                }
+            }
+            trigger->snglsnr[data->ifo_mapping] = max_abs_snr;
+            this_snr = snglsnr[data->channels/2 * (this_sample+max_isample) + tmplt_idx];
+            trigger->coaphase[data->ifo_mapping] = atan2(this_snr.im, this_snr.re);
+            end_time = trigger->end_time; // end time from the triggering single-ifo trigger
+            XLALGPSAdd(&(end_time),
+                           (double)(max_isample - data->ntimelag) / data->rate); // from -10ms time
+ 
+            trigger->end_time_sngl[data->ifo_mapping] = end_time;
+			trigger->cohsnr = sqrt(trigger->cohsnr * trigger->cohsnr + max_abs_snr * max_abs_snr);
+
+            GST_DEBUG_OBJECT(jointer, "new ifos -> %s, this ifo %d, sample %d, tmplt_idx %d,"
+                    "coinc ifo time %d, %d, max snr.re %f, snr.im %f, snr %f", trigger->ifos, 
+                    data->ifo_mapping, max_isample, tmplt_idx, end_time.gpsSeconds, 
+                    end_time.gpsNanoSeconds, this_snr.re, this_snr.im, 
+                    sqrt(this_snr.re*this_snr.re + this_snr.im*this_snr.im));
+        }
+        gst_adapter_flush(data->adapter, exe_size);
+    }
+    return ret;
 }
 
 
 static GstFlowReturn
 trigger_jointer_process(GstCollectPads *pads,
-		TriggerJointer *jointer) {
-	GSList *collectlist;
-	TriggerJointerCollectData *data;
+        TriggerJointer *jointer) {
+    GSList *collectlist;
+    TriggerJointerCollectData *data;
     GstBuffer *buf = NULL, *postcoh_buf = NULL;
     GstFlowReturn ret = GST_FLOW_OK;
-	gboolean is_gap;
-	GstClockTime buf_start, buf_end;
+    gboolean is_gap;
+    GstClockTime buf_start, buf_end;
 
-	int i;
-	/* 
-	 * first, load the postcoh_buf pointer with the buffer from the postcoh pad;
-	 * load each snr adapter with the snr buf from each snr pad
-	 */
+    int i;
+    /* 
+     * first, load the postcoh_buf pointer with the buffer from the postcoh pad;
+     * load each snr adapter with the snr buf from each snr pad
+     */
     for (i = 0, collectlist = pads->data; collectlist;
          collectlist = g_slist_next(collectlist), i++) {
         data = collectlist->data;
         buf  = gst_collect_pads_pop(pads, (GstCollectData *)data);
-		/* no buffer in postcoh pad, sending EOS event downstream */
-		if (!buf && data->is_snr == 0)  {
-			ret = gst_pad_push_event(jointer->srcpad, gst_event_new_eos());
-			return ret;
-		}
-		/* no buffer in SNR pad, do nothing */
-		if (!buf && data->is_snr == 1) 
-			continue;
+        /* no buffer in postcoh pad, sending EOS event downstream */
+        if (!buf && data->is_snr == 0)  {
+            ret = gst_pad_push_event(jointer->srcpad, gst_event_new_eos());
+            return ret;
+        }
+        /* no buffer in SNR pad, do nothing */
+        if (!buf && data->is_snr == 1) 
+            continue;
 
-		/* is a postcoh buffer */
+        /* is a postcoh buffer */
         if (buf && data->is_snr == 0) { 
-			jointer->is_next_tstart_set = FALSE;
-			postcoh_buf = buf;
-		} else {/* is a snr buffer, add flag segment and push to adapter and */
+            jointer->is_next_tstart_set = FALSE;
+            postcoh_buf = buf;
+        } else {/* is a snr buffer, add flag segment and push to adapter and */
             is_gap =
               GST_BUFFER_FLAG_IS_SET(buf, GST_BUFFER_FLAG_GAP) ? TRUE : FALSE;
-			buf_start = GST_BUFFER_TIMESTAMP(buf);
-			buf_end = buf_start + GST_BUFFER_DURATION(buf);
+            buf_start = GST_BUFFER_TIMESTAMP(buf);
+            buf_end = buf_start + GST_BUFFER_DURATION(buf);
             add_flag_segment(data, buf_start, buf_end, is_gap);
-			gst_adapter_push(data->adapter, buf);
-			GST_DEBUG_OBJECT(jointer, "snr buffer pushed to adapter, is gap %d", is_gap);
-		}
-	}
-	/* append coincidence snr from the snr buffer for each postcoh trigger */
+            gst_adapter_push(data->adapter, buf);
+            GST_DEBUG_OBJECT(jointer, "snr buffer pushed to adapter, is gap %d", is_gap);
+        }
+    }
+    /* append coincidence snr from the snr buffer for each postcoh trigger */
     ret = trigger_jointer_append_coinc_snr(jointer, postcoh_buf);
 
     if (ret != GST_FLOW_OK) {
         fprintf(
           stderr,
           "failed to append coinc snr");
-			return ret;
+            return ret;
     }
-	/* push the processed tabel downstream */ 
+    /* push the processed tabel downstream */ 
     ret = gst_pad_push(jointer->srcpad, postcoh_buf);
 
     if (ret != GST_FLOW_OK) {
         fprintf(
           stderr,
           "failed to push buffer to next element finalsink");
-			return ret;
+            return ret;
     }
 
     GST_LOG_OBJECT(jointer, "pushed buffer, result = %s",
                    gst_flow_get_name(ret));
 
-	return ret;
+    return ret;
+}
+
+static gboolean trigger_jointer_padding_adapter(TriggerJointer *jointer) {
+    GList *snrdata;
+    TriggerJointerCollectData *data;
+
+   for (snrdata = jointer->collect_snrdata; snrdata;
+         snrdata = g_slist_next(snrdata)) {
+        data = snrdata->data;
+        guint zerobuf_size = data->ntimelag * data->bps;
+        /* padding a zero buffer for history data */
+        GstBuffer *zerobuf = gst_buffer_new_and_alloc(
+                  zerobuf_size);
+        memset(GST_BUFFER_DATA(zerobuf), 0, GST_BUFFER_SIZE(zerobuf));
+        gst_adapter_push(data->adapter, zerobuf);
+    }
+    return TRUE;
 }
 
 /* entry function */
@@ -820,7 +885,7 @@ static GstFlowReturn collected(GstCollectPads *pads, gpointer user_data) {
 
     GST_DEBUG_OBJECT(jointer, "collected");
     /* Make sure that we have enough sink pads. At least 2, one for the postcoh pad,
-	 * the others for snr pads */
+     * the others for snr pads */
     if (element->numsinkpads < 2) {
         GST_ERROR_OBJECT(
           jointer, "not enough sink pads, 2 required but only %d are present",
@@ -829,11 +894,11 @@ static GstFlowReturn collected(GstCollectPads *pads, gpointer user_data) {
     }
 
     if (!jointer->is_t0_set) {
-		/* 
-		 * Initialization. Set the start time t0 from the latest time
-		 * of any pads, whether the postcoh pad or snr pads.
-		 * and get the snr sample rate information from snr pads.
-		 */
+        /* 
+         * Initialization. Set the start time t0 from the latest time
+         * of any pads, whether the postcoh pad or snr pads.
+         * and get the snr sample rate information from snr pads.
+         */
         /* get the timestamp for start and end from the postcoh table buffer */
         if (!trigger_jointer_get_start_end_time(jointer, &tstart, &tend,
                                                 &offset_start)) {
@@ -844,37 +909,45 @@ static GstFlowReturn collected(GstCollectPads *pads, gpointer user_data) {
             return GST_FLOW_ERROR;
         }
         jointer->t0           = tstart;
-		jointer->tstart       = tstart;
+        jointer->tstart       = tstart;
         jointer->next_tstart   = tend;
         jointer->offset0      = offset_start;
-		jointer->is_next_tstart_set = TRUE;
+        jointer->is_next_tstart_set = TRUE;
         GST_DEBUG_OBJECT(jointer,
                          "set the aligned time t0 to %" GST_TIME_FORMAT
                          ", start offset0 to %" G_GUINT64_FORMAT,
                          GST_TIME_ARGS(jointer->t0), jointer->offset0);
         jointer->is_t0_set = TRUE;
-		/* get the width, rate, channel information from the caps structure of each snr pad */
-		trigger_jointer_set_snr_info(jointer);
+        /* get the width, rate, channel information from the caps structure of each snr pad */
+        trigger_jointer_set_snr_info(jointer);
+
+        /* padding the adapters in the SNR pads with zeros to account for history data */
+        if (!trigger_jointer_padding_adapter(jointer)) {
+            /* can not push to each pad adapter */
+            GST_ERROR_OBJECT(
+              jointer, "cannot push a zero buffer to each pad adapter, check adapter");
+            return GST_FLOW_ERROR;
+        }
     }
 
     if (!jointer->is_all_aligned) {
-		/* 
-		 * Align the snr pads to the postcoh pad according to t0. 
-		 * Throw away those buffers from the snr pads whose start timestamps are less than t0.
-		 * When this condition is satisfied, we can start process the triggers.
-		 */
+        /* 
+         * Align the snr pads to the postcoh pad according to t0. 
+         * Throw away those buffers from the snr pads whose start timestamps are less than t0.
+         * When this condition is satisfied, we can start process the triggers.
+         */
         jointer->is_all_aligned = trigger_jointer_align_collected(pads, jointer);
     } else {
         if (!jointer->is_next_tstart_set){
-			/* set the next start time and end time from the postcoh pad */
-			trigger_jointer_set_next_tstart(pads, jointer);
-			jointer->is_next_tstart_set = TRUE;
-		}
+            /* set the next start time and end time from the postcoh pad */
+            trigger_jointer_set_next_tstart(pads, jointer);
+            jointer->is_next_tstart_set = TRUE;
+        }
         if (trigger_jointer_need_recollect(pads, jointer)) 
-			/* snr pads do not have enough buffers to cover expected end time,
-			 * recollect snr buffers */
-			return GST_FLOW_OK;
-		/* process, append each trigger with coinc snr and push downstream */
+            /* snr pads do not have enough buffers to cover expected end time,
+             * recollect snr buffers */
+            return GST_FLOW_OK;
+        /* process, append each trigger with coinc snr and push downstream */
         ret = trigger_jointer_process(pads, jointer);
     }
     return ret;
@@ -893,7 +966,6 @@ static void trigger_jointer_dispose(GObject *object) {
 
     if (element->srcpad) gst_object_unref(element->srcpad);
     element->srcpad = NULL;
-    /* destroy hashtable and its contents */
     G_OBJECT_CLASS(parent_class)->dispose(object);
 }
 
@@ -904,12 +976,12 @@ static void trigger_jointer_base_init(gpointer g_class) {
       element_class, "Populate postcoh table with maximum coincident SNRs from postcoh-bypassed detectors", "Filter",
       "Trigger Jointer.\n", "Qi Chu <qi.chu at ligo dot org>");
 
-	/* sink pads */
+    /* sink pads */
     gst_element_class_add_pad_template(
       element_class, gst_static_pad_template_get(&trigger_jointer_postcoh_sink_template));
     gst_element_class_add_pad_template(
       element_class, gst_static_pad_template_get(&trigger_jointer_snr_sink_template));
-	/* src pads */
+    /* src pads */
     gst_element_class_add_pad_template(
       element_class,
       gst_pad_template_new("src", GST_PAD_SRC, GST_PAD_ALWAYS,

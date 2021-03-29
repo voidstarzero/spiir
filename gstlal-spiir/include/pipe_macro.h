@@ -11,6 +11,9 @@ typedef struct _IFOType {
     int index;
 } IFOType;
 
+#define H1_IFO_ID 0
+#define L1_IFO_ID 1
+#define V1_IFO_ID 2
 #define MAX_NIFO 3
 #ifdef __cplusplus
 constexpr

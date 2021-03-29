@@ -72,6 +72,7 @@ struct _TriggerJointerCollectData {
     gint channels;
     gint width;
     gint bps;
+	gint ntimelag;
     double offset_per_nanosecond;
     GstAdapter *adapter;
     GArray *flag_segments;
@@ -108,6 +109,7 @@ struct _TriggerJointer {
 
     GstClockTime t0;
     GstClockTime tstart;
+	GstClockTime max_timelag; // 10 ms
     GstClockTime next_tstart;
     guint64 offset0;
 
