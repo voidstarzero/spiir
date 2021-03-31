@@ -60,10 +60,8 @@ typedef void (*TriggerJointerPeakfinder)(gpointer d_snglsnr, gint size);
 
 struct _TriggerJointerCollectData {
     GstCollectData data;
-    int is_snr;
+    gboolean is_snr;
     gboolean is_aligned;
-    guint64 aligned_offset0;
-    guint64 next_offset;
     GstCollectDataDestroyNotify destroy_notify;
     /* the following structures are only used for snr pads */
 	gchar *ifo_name;
@@ -72,8 +70,10 @@ struct _TriggerJointerCollectData {
     gint channels;
     gint width;
     gint bps;
-	gint ntimelag;
-    double offset_per_nanosecond;
+    gint ntmplt;
+    GstClockTime timelag; // IFO-dependent timelag in nano seconds
+	gint ntimelag; // IFO-dependent timelag in offset (number of samples)
+    GstClockTime next_tstart; // expected next buffer time
     GstAdapter *adapter;
     GArray *flag_segments;
 };
@@ -109,9 +109,6 @@ struct _TriggerJointer {
 
     GstClockTime t0;
     GstClockTime tstart;
-	GstClockTime max_timelag; // 10 ms
-    GstClockTime next_tstart;
-    guint64 offset0;
 
     gint output_skymap;
     /* sink event handling */
