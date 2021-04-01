@@ -77,6 +77,13 @@ static PyMemberDef members[] = {
     { "end_time_ns", T_INT,
       offsetof(gstlal_GSTLALPostcohInspiral, row.end_time.gpsNanoSeconds), 0,
       "end_time_ns" },
+    // Not dependent on the number of detectors
+    { "ringdown_dur", T_INT,
+      offsetof(gstlal_GSTLALPostcohInspiral, row.ringdown_dur.gpsSeconds), 0,
+      "ringdown_dur" },
+    { "ringdown_dur_ns", T_INT,
+      offsetof(gstlal_GSTLALPostcohInspiral, row.ringdown_dur.gpsNanoSeconds), 0,
+      "ringdown_dur_ns" },
     { "is_background", T_INT,
       offsetof(gstlal_GSTLALPostcohInspiral, row.is_background), 0,
       "is_background" },

@@ -395,7 +395,7 @@ static gboolean trigger_jointer_set_snr_info(TriggerJointer *jointer) {
         data->timelag = data->ntimelag / (double)data->rate * GST_SECOND;
         GST_DEBUG_OBJECT(
           data,
-          "get ifo_name %s, ifo_mapping %d,rate %d, channels %d, bps %d,"
+          "get ifo_name %s, ifo_mapping %d, rate %d, channels %d, bps %d,"
           "timelag in nsamples %d",
           data->ifo_name, data->ifo_mapping, data->rate, data->channels,
           data->bps, data->ntimelag);
@@ -411,8 +411,6 @@ static GstPad *trigger_jointer_request_new_pad(GstElement *element,
     /* create the pad */
     GstPad *newpad;
     newpad = gst_pad_new_from_template(templ, req_name);
-    gst_pad_set_setcaps_function(
-      GST_PAD(newpad), GST_DEBUG_FUNCPTR(trigger_jointer_sink_setcaps));
 
     /* add the newpad to the element */
     if (!gst_element_add_pad(element, newpad)) {
@@ -795,7 +793,7 @@ static GstFlowReturn trigger_jointer_append_coinc_snr(TriggerJointer *jointer,
 
         /* get the C pointer to point to the SNR matrix */
         snglsnr = (COMPLEX_F *)gst_adapter_peek(data->adapter, one_take_size);
-        /* no data in adapter, do nothing */
+        /* no enough data in adapter, do nothing */
         if (snglsnr == NULL) continue;
 
         /*
@@ -829,17 +827,23 @@ static GstFlowReturn trigger_jointer_append_coinc_snr(TriggerJointer *jointer,
             /* not a zerolag trigger but an entry
              * just to indicate ifos */
             if (trigger->is_background != FLAG_FOREGROUND) continue;
+            max_isample = 0;
             max_abs_snr = 0;
             /* inserting the IFO into the IFO list */
             strncpy(trigger->ifos + len_ifos, data->ifo_name, one_ifo_size);
             trigger->ifos[pad_loc] = '\0';
             /* find the sample corresponding to the end_time of the trigger
-             */
-            this_sec = trigger->end_time.gpsSeconds - cur_buftime.gpsSeconds;
-            this_nano =
-              trigger->end_time.gpsNanoSeconds - cur_buftime.gpsNanoSeconds;
+             * note adjust the merger end_time to the template end_time */
+            this_sec = trigger->end_time.gpsSeconds
+                       + trigger->ringdown_dur.gpsSeconds
+                       - cur_buftime.gpsSeconds;
+            this_nano = trigger->end_time.gpsNanoSeconds
+                        + trigger->ringdown_dur.gpsNanoSeconds
+                        - cur_buftime.gpsNanoSeconds;
             this_sample =
-              round((this_sec + (double)(this_nano) / GST_SECOND) * data->rate);
+              round(((double)this_sec + (double)(this_nano) / GST_SECOND)
+                    * data->rate);
+            g_assert(this_sample >= 0 && this_sample < data->rate);
             /* find the tmplt idx of the trigger */
             tmplt_idx = trigger->tmplt_idx;
             /* find the maximum SNR within the window of the triggering time
@@ -863,7 +867,12 @@ static GstFlowReturn trigger_jointer_append_coinc_snr(TriggerJointer *jointer,
                                           // single-ifo trigger
             XLALGPSAdd(&(end_time),
                        (double)(max_isample - data->ntimelag)
-                         / data->rate); // adjust
+                         / data->rate); // adjust for the start
+            end_time.gpsSeconds =
+              end_time.gpsSeconds
+              - trigger->ringdown_dur.gpsSeconds; // adjust for ringdown
+            end_time.gpsNanoSeconds =
+              end_time.gpsNanoSeconds - trigger->ringdown_dur.gpsNanoSeconds;
 
             trigger->end_time_sngl[data->ifo_mapping] = end_time;
             trigger->cohsnr = sqrt(trigger->cohsnr * trigger->cohsnr
@@ -967,7 +976,8 @@ static GstFlowReturn collected(GstCollectPads *pads, gpointer user_data) {
         return GST_FLOW_ERROR;
     }
     if (!jointer->is_snr_info_set) {
-        trigger_jointer_set_snr_info(data);
+        /* set rate, channels for this snr data */
+        trigger_jointer_set_snr_info(jointer);
         jointer->is_snr_info_set = TRUE;
     }
 
@@ -1092,6 +1102,7 @@ static void trigger_jointer_init(TriggerJointer *jointer,
 
     jointer->t0                 = GST_CLOCK_TIME_NONE;
     jointer->is_t0_set          = FALSE;
+    jointer->is_snr_info_set    = FALSE;
     jointer->is_all_aligned     = FALSE;
     jointer->is_next_tstart_set = FALSE;
 }

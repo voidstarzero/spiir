@@ -33,7 +33,8 @@ typedef struct tagPostcohInspiralTable {
     struct tagPostcohInspiralTable *next;
     long process_id;
     long event_id;
-    LIGOTimeGPS end_time;
+    LIGOTimeGPS ringdown_dur; // ring-down duration
+    LIGOTimeGPS end_time; // merger time
     LIGOTimeGPS end_time_sngl[MAX_NIFO];
     INT4 is_background;
     INT4 livetime;

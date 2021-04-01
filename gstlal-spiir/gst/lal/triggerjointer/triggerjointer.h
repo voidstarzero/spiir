@@ -103,6 +103,7 @@ struct _TriggerJointer {
     gint bps;
 
     gboolean is_t0_set;
+    gboolean is_snr_info_set;
     gboolean is_all_aligned;
     gboolean is_next_tstart_set;
     double offset_per_nanosecond;
