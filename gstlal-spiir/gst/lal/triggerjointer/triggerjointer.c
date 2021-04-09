@@ -843,7 +843,10 @@ static GstFlowReturn trigger_jointer_append_coinc_snr(TriggerJointer *jointer,
             this_sample =
               round(((double)this_sec + (double)(this_nano) / GST_SECOND)
                     * data->rate);
-            g_assert(this_sample >= 0 && this_sample < data->rate);
+			if (this_sample < 0 || this_sample >= data->rate) {
+				fprintf(stderr, "Search for coinc trigger out of boundary [0, rate) %d\n", this_sample);
+				exit(0);
+			}
             /* find the tmplt idx of the trigger */
             tmplt_idx = trigger->tmplt_idx;
             /* find the maximum SNR within the window of the triggering time

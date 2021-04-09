@@ -320,6 +320,7 @@ TriggerStatsXML *trigger_stats_xml_create(char *ifos, int stats_type) {
     int icombo        = get_icombo(ifos);
     stats->multistats = trigger_stats_create(icombo);
     stats->icombo     = icombo;
+    stats->nifo     = __builtin_popcount(icombo+1);
     return stats;
 }
 
@@ -989,7 +990,7 @@ gboolean trigger_stats_xml_from_xml(TriggerStatsXML *stats,
 
     int nelem  = 10; // 4 for feature, 4 for rank, 2 for nevent,livetime
     int icombo = stats->icombo;
-    int nifo   = __builtin_popcount(icombo + 1);
+    int nifo   = stats->nifo;
     int nodes  = nifo + 1; // top level nodes
     int nnode  = nodes * nelem + 1, combo; // 1 for hist_trials
     /* read rate */

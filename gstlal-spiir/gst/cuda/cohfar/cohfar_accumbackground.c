@@ -104,27 +104,31 @@ static gboolean cohfar_accumbackground_sink_event(GstPad *pad, GstEvent *event);
 static void cohfar_accumbackground_dispose(GObject *object);
 
 static void update_stats_icombo(PostcohInspiralTable *intable,
+                                int table_icombo,
                                 TriggerStatsXML *stats) {
-    int nifo, ifo;
-    nifo = __builtin_popcount(stats->icombo + 1);
+    int ifo, index;
 
+    // update the multi-IFO background at the last bin.
     if (stats->icombo > -1) {
-        // update the multi-IFO background at the last bin.
         trigger_stats_feature_rate_update(
           (double)(intable->cohsnr), (double)intable->cmbchisq,
-          stats->multistats[nifo]->feature, stats->multistats[nifo]);
+          stats->multistats[stats->nifo]->feature,
+          stats->multistats[stats->nifo]);
+    }
 
-        /* add single detector stats */
-        // update single-IFO background according the single-IFO decomposition
-        int index;
-        for (ifo = 0, index = 0; ifo < MAX_NIFO; ifo++) {
-            if ((stats->icombo + 1) & (1 << ifo)) {
+    /* add single detector stats */
+    // update single-IFO background according the single-IFO decomposition
+    for (ifo = 0, index = 0; ifo < MAX_NIFO; ifo++) {
+        /* check ifo in stats, e.g. stats: LVK */
+        if ((stats->icombo + 1) & (1 << ifo)) {
+            /* check ifo in table, e.g. table: LK */
+            if ((table_icombo + 1) & (1 << ifo)) {
                 trigger_stats_feature_rate_update(
                   (double)(intable->snglsnr[ifo]),
                   (double)(intable->chisq[ifo]),
                   stats->multistats[index]->feature, stats->multistats[index]);
-                ++index;
             }
+            index++;
         }
     }
 }
@@ -209,7 +213,7 @@ static GstFlowReturn cohfar_accumbackground_chain(GstPad *pad,
           srcpad, "Could not allocate postcoh-inspiral buffer %d", result);
         return result;
     }
-    int icombo = 0;
+    int table_icombo = 0, ifo, index;
 
     /*
      * update background rate
@@ -218,11 +222,10 @@ static GstFlowReturn cohfar_accumbackground_chain(GstPad *pad,
     intable = (PostcohInspiralTable *)GST_BUFFER_DATA(inbuf);
     PostcohInspiralTable *outtable =
       (PostcohInspiralTable *)GST_BUFFER_DATA(outbuf);
-    int isingle, nifo;
     for (; intable < intable_end; intable++) {
-        icombo = get_icombo(intable->ifos);
+        table_icombo = get_icombo(intable->ifos);
         // The combination of IFOs is invalid
-        if (icombo < 0) {
+        if (table_icombo < 0) {
             LIGOTimeGPS ligo_time;
             XLALINT8NSToGPS(&ligo_time, GST_BUFFER_TIMESTAMP(inbuf));
             fprintf(stderr,
@@ -233,12 +236,12 @@ static GstFlowReturn cohfar_accumbackground_chain(GstPad *pad,
         }
         if (intable->is_background == FLAG_BACKGROUND) {
             update_stats_icombo(
-              intable,
+              intable, table_icombo,
               bgstats); // update the last combination and single IFO stats
         } else if (intable->is_background
                    == FLAG_FOREGROUND) { /* coherent trigger entry */
             update_stats_icombo(
-              intable,
+              intable, table_icombo,
               zlstats); // update the last combination and single IFO stats
             memcpy(outtable, intable, sizeof(PostcohInspiralTable));
             outtable++;
@@ -249,15 +252,24 @@ static GstFlowReturn cohfar_accumbackground_chain(GstPad *pad,
             // determine if we have more than one IFO participating
             //
             // Note that this is inverted because icombo is sum(1 << index) - 1
-            if ((icombo + 1) & icombo) {
-                nifo = __builtin_popcount(icombo + 1);
-                /* add single detector stats */
-                get_write_ifo_mapping(IFOComboMap[icombo].name, nifo,
-                                      element->write_ifo_mapping);
+            // FIXME: consider single-detector event ?
+            if ((table_icombo + 1) & table_icombo) {
+                trigger_stats_livetime_inc(bgstats->multistats, bgstats->nifo);
+                trigger_stats_livetime_inc(zlstats->multistats, zlstats->nifo);
+            }
 
-                for (isingle = 0; isingle <= nifo; isingle++) {
-                    trigger_stats_livetime_inc(bgstats->multistats, isingle);
-                    trigger_stats_livetime_inc(zlstats->multistats, isingle);
+            // update single-IFO background according the single-IFO
+            // decomposition
+            for (ifo = 0, index = 0; ifo < MAX_NIFO; ifo++) {
+                /* check ifo in stats, e.g. stats: LVK */
+                if ((bgstats->icombo + 1) & (1 << ifo)) {
+                    /* check ifo in table, e.g. table: LK */
+                    if ((table_icombo + 1) & (1 << ifo)) {
+
+                        trigger_stats_livetime_inc(bgstats->multistats, index);
+                        trigger_stats_livetime_inc(zlstats->multistats, index);
+                    }
+                    index++;
                 }
             }
             memcpy(outtable, intable, sizeof(PostcohInspiralTable));
@@ -423,7 +435,8 @@ static void cohfar_accumbackground_set_property(GObject *object,
         break;
 
     case PROP_SOURCE_TYPE:
-        /* must make sure ifos have been loaded, so stats have been created */
+        /* must make sure ifos have been loaded, so stats have been created
+         */
         g_assert(element->ifos != NULL);
         element->source_type = g_value_get_int(value);
         signal_stats_init(element->sgstats, element->source_type);
@@ -431,7 +444,8 @@ static void cohfar_accumbackground_set_property(GObject *object,
 
     case PROP_HISTORY_FNAME:
 
-        /* must make sure ifos have been loaded, so stats have been created */
+        /* must make sure ifos have been loaded, so stats have been created
+         */
         g_assert(element->ifos != NULL);
         element->history_fname = g_value_dup_string(value);
         trigger_stats_xml_from_xml(element->bgstats, &(element->hist_trials),
@@ -593,11 +607,12 @@ static void
 
     g_object_class_install_property(
       gobject_class, PROP_SNAPSHOT_INTERVAL,
-      g_param_spec_int(
-        "snapshot-interval", "snapshot interval",
-        "(-1) never update; (0) snapshot at the end; (N) snapshot background "
-        "statistics xml file every N seconds.",
-        -1, G_MAXINT, 86400, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_int("snapshot-interval", "snapshot interval",
+                       "(-1) never update; (0) snapshot at the end; (N) "
+                       "snapshot background "
+                       "statistics xml file every N seconds.",
+                       -1, G_MAXINT, 86400,
+                       G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 /*
  * init()
