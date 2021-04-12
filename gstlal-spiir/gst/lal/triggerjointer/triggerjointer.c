@@ -670,7 +670,6 @@ static gboolean trigger_jointer_set_next_tstart(GstCollectPads *pads,
 
     GSList *snrdata;
     if (buf != NULL) { // != if(buf)
-
         for (snrdata = jointer->collect_snrdata; snrdata;
              snrdata = g_slist_next(snrdata)) {
             data = snrdata->data;
@@ -843,10 +842,13 @@ static GstFlowReturn trigger_jointer_append_coinc_snr(TriggerJointer *jointer,
             this_sample =
               round(((double)this_sec + (double)(this_nano) / GST_SECOND)
                     * data->rate);
-			if (this_sample < 0 || this_sample >= data->rate) {
-				fprintf(stderr, "Search for coinc trigger out of boundary [0, rate) %d\n", this_sample);
-				exit(0);
-			}
+            if (this_sample < 0 || this_sample >= data->rate) {
+                fprintf(
+                  stderr,
+                  "Search for coinc trigger out of boundary [0, rate) %d\n",
+                  this_sample);
+                exit(0);
+            }
             /* find the tmplt idx of the trigger */
             tmplt_idx = trigger->tmplt_idx;
             /* find the maximum SNR within the window of the triggering time
@@ -913,11 +915,6 @@ static GstFlowReturn trigger_jointer_process(GstCollectPads *pads,
          collectlist = g_slist_next(collectlist), i++) {
         data = collectlist->data;
         buf  = gst_collect_pads_pop(pads, (GstCollectData *)data);
-        /* no buffer in postcoh pad, sending EOS event downstream */
-        if (!buf && data->is_snr == 0) {
-            ret = gst_pad_push_event(jointer->srcpad, gst_event_new_eos());
-            return ret;
-        }
         /* no buffer in SNR pad, do nothing */
         if (!buf && data->is_snr == 1) continue;
 
@@ -959,6 +956,19 @@ static GstFlowReturn trigger_jointer_process(GstCollectPads *pads,
     return ret;
 }
 
+static gboolean trigger_jointer_is_EOS(TriggerJointer *jointer) {
+
+    /* check the current postcoh buffer queued in postcoh pad */
+    GstBuffer *buf = gst_collect_pads_peek(
+      jointer->collect, (GstCollectData *)jointer->collect_postcohdata);
+
+    if (!buf) { // equals buf == NULL ?
+        /* no buffer in postcoh pad, mark EOS */
+        return TRUE;
+    } else
+        return FALSE;
+}
+
 /* entry function */
 static GstFlowReturn collected(GstCollectPads *pads, gpointer user_data) {
     TriggerJointer *jointer = TRIGGER_JOINTER(user_data);
@@ -978,8 +988,15 @@ static GstFlowReturn collected(GstCollectPads *pads, gpointer user_data) {
           element->numsinkpads < 2);
         return GST_FLOW_ERROR;
     }
+
+    /* check end of stream ? */
+    if (trigger_jointer_is_EOS(jointer)) {
+        ret = gst_pad_push_event(jointer->srcpad, gst_event_new_eos());
+        return ret;
+    }
+
     if (!jointer->is_snr_info_set) {
-        /* set rate, channels for this snr data */
+        /* set rate, channels for collected snr pads */
         trigger_jointer_set_snr_info(jointer);
         jointer->is_snr_info_set = TRUE;
     }
@@ -987,7 +1004,8 @@ static GstFlowReturn collected(GstCollectPads *pads, gpointer user_data) {
     if (!jointer->is_t0_set) {
         /*
          * Initialization. Set the start time t0 from the latest time
-         * of any pads, whether the postcoh pad or snr pads.
+         * of any pads, whether the postcoh pad or snr pads. If SNR has the
+         * latest time, pass downstream the postcoh buffer and recheck.
          */
         if (!trigger_jointer_get_start_end_time(pads, jointer, &tstart, &tend,
                                                 &is_t0_set)) {
