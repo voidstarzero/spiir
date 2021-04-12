@@ -77,7 +77,7 @@ lsctables.LIGOTimeGPS = LIGOTimeGPS
 #
 # =============================================================================
 #
-#						 glue.ligolw Content Handlers
+#                         glue.ligolw Content Handlers
 #
 # =============================================================================
 #
@@ -406,6 +406,7 @@ class FinalSink(object):
                  far_factor,
                  cluster_window=0.5,
                  snapshot_interval=None,
+                 fapupdater_ifos="H1L1V1",
                  fapupdater_interval=None,
                  cohfar_accumbackground_output_prefix=None,
                  cohfar_accumbackground_output_name=None,
@@ -435,6 +436,7 @@ class FinalSink(object):
         self.channel_dict = channel_dict
         self.ifos = lsctables.ifos_from_instrument_set(
             channel_dict.keys()).replace(",", "")  # format: "H1L1V1"
+        self.fapupdater_ifos = fapupdater_ifos; # ifos that are used for significance estimation
 
         # cluster parameters
         self.cluster_window = cluster_window
@@ -519,7 +521,7 @@ class FinalSink(object):
             input_prefix_list=cohfar_accumbackground_output_prefix,
             output_list_string=fapupdater_output_fname,
             collect_walltime_string=fapupdater_collect_walltime_string,
-            ifos=self.ifos,
+            ifos=self.fapupdater_ifos,
             verbose=self.verbose)
 
         # online information performer
@@ -740,13 +742,13 @@ class FinalSink(object):
     # def __lookback_far(self, candidate):
     # FIXME: hard-code to check event that's < 5e-7
     # if candidate.far > 5e-7:
-    #	 return
+    #     return
     # else:
-    #	 count_events = sum((lookback_event.far < 1e-4) for lookback_event in self.lookback_event_table)
-    #	 if count_events > 1:
-    #		 # FAR estimation is not valide for this period, increase the FAR
-    #		 # FIXME: should derive FAR from count_events
-    #		  candidate.far = 9.99e-6
+    #     count_events = sum((lookback_event.far < 1e-4) for lookback_event in self.lookback_event_table)
+    #     if count_events > 1:
+    #         # FAR estimation is not valide for this period, increase the FAR
+    #         # FIXME: should derive FAR from count_events
+    #          candidate.far = 9.99e-6
 
     # all_snr_H = self.lookback_event_table.getColumnByName('snglsnr_H')
     # all_snr_L = self.lookback_event_table.getColumnByName('snglsnr_L')
@@ -758,7 +760,7 @@ class FinalSink(object):
     # count_better_L = sum((snr > candidate.snglsnr_L && chisq < candidate.chisq_L) for (snr, chisq) in zip(all_snr_L, allchisq_L))
     # count_better_V = sum((snr > candidate.snglsnr_V && chisq < candidate.chisq_V) for (snr, chisq) in zip(all_snr_V, allchisq_V))
     # if count_better_H > 0 or count_better_L > 0 or count_better_V > 0:
-    #	 candidate.far = 9.99e-6
+    #     candidate.far = 9.99e-6
 
     def __need_trigger_control(self, trigger):
         # do trigger control

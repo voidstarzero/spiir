@@ -526,9 +526,9 @@ def parse_command_line():
 
     # Get the banks and make the detectors
 
-    # format of iir_banks :	[{'H1': <H1Bank0>; 'L1': <L1Bank0>..;}
-    #			 {'H1': <H1Bank1>; 'L1': <L1Bank1>..;}
-    #			 ...]
+    # format of iir_banks :    [{'H1': <H1Bank0>; 'L1': <L1Bank0>..;}
+    #             {'H1': <H1Bank1>; 'L1': <L1Bank1>..;}
+    #             ...]
 
     iir_banks = [
         spiir_utils.parse_iirbank_string(iirbank)
@@ -773,6 +773,7 @@ finalsink = postcoh_finalsink.FinalSink(
     cohfar_accumbackground_output_prefix,
     cohfar_accumbackground_output_name=options.
     cohfar_accumbackground_output_name,
+    fapupdater_ifos=options.cuda_postcoh_parti_ifos,
     fapupdater_interval=options.finalsink_fapupdater_interval,
     fapupdater_output_fname=options.finalsink_fapupdater_output_fname,
     fapupdater_collect_walltime_string=options.
