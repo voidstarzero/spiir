@@ -127,6 +127,12 @@ static void update_stats_icombo(PostcohInspiralTable *intable,
                   (double)(intable->snglsnr[ifo]),
                   (double)(intable->chisq[ifo]),
                   stats->multistats[index]->feature, stats->multistats[index]);
+                GST_LOG("Trigger end time %d:%d, ifos %s, trigger ifo %s, "
+                        "icombo %d, adding stats %d, snr %f, chisq %f",
+                        intable->end_time.gpsSeconds,
+                        intable->end_time.gpsNanoSeconds, intable->ifos,
+                        intable->pivotal_ifo, table_icombo, index,
+                        intable->snglsnr[ifo], intable->chisq[ifo]);
             }
             index++;
         }
@@ -256,20 +262,22 @@ static GstFlowReturn cohfar_accumbackground_chain(GstPad *pad,
             if ((table_icombo + 1) & table_icombo) {
                 trigger_stats_livetime_inc(bgstats->multistats, bgstats->nifo);
                 trigger_stats_livetime_inc(zlstats->multistats, zlstats->nifo);
-            }
 
-            // update single-IFO background according the single-IFO
-            // decomposition
-            for (ifo = 0, index = 0; ifo < MAX_NIFO; ifo++) {
-                /* check ifo in stats, e.g. stats: LVK */
-                if ((bgstats->icombo + 1) & (1 << ifo)) {
-                    /* check ifo in table, e.g. table: LK */
-                    if ((table_icombo + 1) & (1 << ifo)) {
+                // update single-IFO background according the single-IFO
+                // decomposition
+                for (ifo = 0, index = 0; ifo < MAX_NIFO; ifo++) {
+                    /* check ifo in stats, e.g. stats: LVK */
+                    if ((bgstats->icombo + 1) & (1 << ifo)) {
+                        /* check ifo in table, e.g. table: LK */
+                        if ((table_icombo + 1) & (1 << ifo)) {
 
-                        trigger_stats_livetime_inc(bgstats->multistats, index);
-                        trigger_stats_livetime_inc(zlstats->multistats, index);
+                            trigger_stats_livetime_inc(bgstats->multistats,
+                                                       index);
+                            trigger_stats_livetime_inc(zlstats->multistats,
+                                                       index);
+                        }
+                        index++;
                     }
-                    index++;
                 }
             }
             memcpy(outtable, intable, sizeof(PostcohInspiralTable));
