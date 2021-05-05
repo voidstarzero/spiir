@@ -30,6 +30,7 @@
 
 import math
 import matplotlib
+
 matplotlib.rcParams.update({
     "font.size": 16.0,
     "axes.titlesize": 14.0,
@@ -106,15 +107,15 @@ class PostcohInspiral(postcoh_table_def.PostcohInspiral):
         return self.snr / (self.chisq / self.chisq_dof)**.5
 
     def get_ifo_endtime(self, instrument):
-        end_time = getattr(self, "end_time_%s" % instrument[0])
-        end_time_ns = getattr(self, "end_time_ns_%s" % instrument[0])
+        end_time = getattr(self, "end_time_sngl_%s" % instrument)
+        end_time_ns = getattr(self, "end_time_ns_sngl_%s" % instrument)
         return LIGOTimeGPS(end_time, end_time_ns)
 
     def get_eff_distance(self, instrument):
-        return getattr(self, "deff_%s" % instrument[0])
+        return getattr(self, "deff_%s" % instrument)
 
     def get_snglsnr(self, instrument):
-        return getattr(self, "snglsnr_%s" % instrument[0])
+        return getattr(self, "snglsnr_%s" % instrument)
 
 
 lsctables.LIGOTimeGPS = LIGOTimeGPS
@@ -196,7 +197,14 @@ def parse_command_line():
         "--ifos",
         metavar="ifo-names",
         default="H1L1",
-        help="Set the name of the ifo names (default = \"H1L1\").")
+        help="Set the IFO data processed in the run (default = \"H1L1\").")
+    parser.add_option(
+        "--background-ifos",
+        metavar="ifo-names",
+        default="H1L1",
+        help=
+        "Set the IFO data used for background collection (default = \"H1L1\")."
+    )
     parser.add_option(
         "--plot-group",
         metavar="number",
@@ -621,12 +629,12 @@ SELECT
 	postcoh.mass2,
 	postcoh.spin1z,
 	postcoh.spin2z,
-	postcoh.snglsnr_H,
-	postcoh.chisq_H,
-	postcoh.snglsnr_L,
-	postcoh.chisq_L,
-	postcoh.snglsnr_V,
-	postcoh.chisq_V
+	postcoh.snglsnr_H1,
+	postcoh.chisq_H1,
+	postcoh.snglsnr_L1,
+	postcoh.chisq_L1,
+	postcoh.snglsnr_V1,
+	postcoh.chisq_V1
 FROM
 	postcoh
 WHERE postcoh.far > 0.0
@@ -2266,7 +2274,8 @@ if options.noninj_database:
     rate_plot = RateVsThreshold("noninj")
     plots.append(rate_plot)
     plots.append(
-        BackgroundPlots(options.ifos, options.background_xml, options.njob))
+        BackgroundPlots(options.background_ifos, options.background_xml,
+                        options.njob))
     plot_group = zip([11, 0, 5, 8], plots)
     dbname = options.noninj_database
     contents = setup_plot(dbname, plot_group, options, options.noninj_user_tag,
