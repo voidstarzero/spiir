@@ -24,21 +24,22 @@
 #include <gst/base/gstadapter.h>
 #include <gst/base/gstcollectpads.h>
 #include <gst/gst.h>
+#include <lal/LIGOMetadataTables.h>
 #include <pipe_macro.h>
 #include <postcohtable.h>
-
-#include <lal/LIGOMetadataTables.h>
 
 G_BEGIN_DECLS
 
 #define GSTLAL_TYPE_TRIGGER_JOINTER (trigger_jointer_get_type())
-#define TRIGGER_JOINTER(obj)                                                      \
-    (G_TYPE_CHECK_INSTANCE_CAST((obj), GSTLAL_TYPE_TRIGGER_JOINTER, TriggerJointer))
-#define TRIGGER_JOINTER_CLASS(klass)                                              \
-    (G_TYPE_CHECK_CLASS_CAST((klass), GSTLAL_TYPE_TRIGGER_JOINTER, TriggerJointerClass))
-#define GST_IS_TRIGGER_JOINTER(obj)                                               \
+#define TRIGGER_JOINTER(obj)                                                   \
+    (G_TYPE_CHECK_INSTANCE_CAST((obj), GSTLAL_TYPE_TRIGGER_JOINTER,            \
+                                TriggerJointer))
+#define TRIGGER_JOINTER_CLASS(klass)                                           \
+    (G_TYPE_CHECK_CLASS_CAST((klass), GSTLAL_TYPE_TRIGGER_JOINTER,             \
+                             TriggerJointerClass))
+#define GST_IS_TRIGGER_JOINTER(obj)                                            \
     (G_TYPE_CHECK_INSTANCE_TYPE((obj), GSTLAL_TYPE_TRIGGER_JOINTER))
-#define GST_IS_TRIGGER_JOINTER_CLASS(klass)                                       \
+#define GST_IS_TRIGGER_JOINTER_CLASS(klass)                                    \
     (G_TYPE_CHECK_CLASS_TYPE((klass), GSTLAL_TYPE_TRIGGER_JOINTER))
 
 typedef struct _TriggerJointer TriggerJointer;
@@ -64,15 +65,15 @@ struct _TriggerJointerCollectData {
     gboolean is_aligned;
     GstCollectDataDestroyNotify destroy_notify;
     /* the following structures are only used for snr pads */
-	gchar *ifo_name;
-	gint ifo_mapping;
+    gchar *ifo_name;
+    gint ifo_mapping;
     gint rate;
     gint channels;
     gint width;
     gint bps;
     gint ntmplt;
     GstClockTime timelag; // IFO-dependent timelag in nano seconds
-	gint ntimelag; // IFO-dependent timelag in offset (number of samples)
+    gint ntimelag; // IFO-dependent timelag in offset (number of samples)
     GstClockTime next_tstart; // expected next buffer time
     GstAdapter *adapter;
     GArray *flag_segments;
@@ -88,19 +89,14 @@ struct _TriggerJointer {
 
     /* <private> */
     GstPad *srcpad;
-	/* sink pads composed of a number of SNR pads and one postcoh pad */
-	GSList *collect_snrdata;
-	TriggerJointerCollectData *collect_postcohdata;
-	/* boilder plate collect pads
-	 * pad added to this strucuture
-	 * will invoke collected function
-	 * if buf comes in */
+    /* sink pads composed of a number of SNR pads and one postcoh pad */
+    GSList *collect_snrdata;
+    TriggerJointerCollectData *collect_postcohdata;
+    /* boilder plate collect pads
+     * pad added to this strucuture
+     * will invoke collected function
+     * if buf comes in */
     GstCollectPads *collect;
-
-    gint rate;
-    gint channels;
-    gint width;
-    gint bps;
 
     gboolean is_t0_set;
     gboolean is_snr_info_set;
@@ -109,11 +105,7 @@ struct _TriggerJointer {
     double offset_per_nanosecond;
 
     GstClockTime t0;
-    GstClockTime tstart;
-
     gint output_skymap;
-    /* sink event handling */
-    GstPadEventFunction collect_event;
 };
 
 struct _TriggerJointerClass {

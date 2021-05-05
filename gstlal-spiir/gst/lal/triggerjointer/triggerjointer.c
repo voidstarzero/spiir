@@ -309,21 +309,6 @@ static GstStateChangeReturn
     return GST_ELEMENT_CLASS(parent_class)->change_state(element, transition);
 }
 
-static gboolean sink_event(GstPad *pad, GstEvent *event) {
-    TriggerJointer *jointer         = TRIGGER_JOINTER(GST_PAD_PARENT(pad));
-    TriggerJointerCollectData *data = gst_pad_get_element_private(pad);
-    gboolean ret                    = TRUE;
-
-    switch (GST_EVENT_TYPE(event)) {
-    case GST_EVENT_NEWSEGMENT: GST_DEBUG_OBJECT(pad, "new segment"); break;
-    // do not process tag.
-    case GST_EVENT_TAG: gst_object_unref(event); return TRUE;
-    default: break;
-    }
-    ret = jointer->collect_event(pad, event);
-    return TRUE;
-}
-
 static void destroy_notify(TriggerJointerCollectData *data) {
     if (data) {
         if (data->ifo_name) free(data->ifo_name);
@@ -418,12 +403,9 @@ static GstPad *trigger_jointer_request_new_pad(GstElement *element,
         GST_DEBUG_OBJECT(element, "add %s pad faied", req_name);
         return NULL;
     }
-    /* set the sink event function for the new pad */
-    jointer->collect_event = (GstPadEventFunction)GST_PAD_EVENTFUNC(newpad);
-    gst_pad_set_event_function(newpad, sink_event);
 
-    /* add the new pad to the collect pads
-     * and initialize the pad data */
+    /* add the new pad to the collect pads in a default way, so the pad's event
+     * is dealt with */
     TriggerJointerCollectData *data;
     data = (TriggerJointerCollectData *)gst_collect_pads_add_pad_full(
       jointer->collect, newpad, sizeof(TriggerJointerCollectData),
@@ -450,7 +432,8 @@ static GstPad *trigger_jointer_request_new_pad(GstElement *element,
         /* gap segments */
         data->flag_segments = g_array_new(FALSE, FALSE, sizeof(FlagSegment));
         data->ifo_name      = (gchar *)malloc(IFO_LEN * sizeof(gchar));
-        strncpy(data->ifo_name, req_name + 4, sizeof(data->ifo_name));
+        strncpy(data->ifo_name, req_name + 4,
+                sizeof(data->ifo_name)); // 4 for snr_
         for (j = 0; j < MAX_NIFO; j++) {
             if (strncmp(data->ifo_name, IFOMap[j].name, IFO_LEN) == 0)
                 data->ifo_mapping = j;
@@ -587,7 +570,7 @@ static gboolean trigger_jointer_align_collected(GstCollectPads *pads,
             continue;
         }
         /* postcoh table buffer, set TRUE to is_aligned */
-        if (data->is_snr == 0 && data->is_aligned == FALSE) {
+        if (data->is_snr == FALSE && data->is_aligned == FALSE) {
             GST_DEBUG_OBJECT(data, "set postcoh pad to aligned");
             data->is_aligned = TRUE;
             continue;
@@ -915,11 +898,12 @@ static GstFlowReturn trigger_jointer_process(GstCollectPads *pads,
          collectlist = g_slist_next(collectlist), i++) {
         data = collectlist->data;
         buf  = gst_collect_pads_pop(pads, (GstCollectData *)data);
+
         /* no buffer in SNR pad, do nothing */
-        if (!buf && data->is_snr == 1) continue;
+        if (!buf && data->is_snr == TRUE) continue;
 
         /* is a postcoh buffer */
-        if (buf && data->is_snr == 0) {
+        if (buf && data->is_snr == FALSE) {
             postcoh_buf = buf;
         } else { /* is a snr buffer, add flag segment and push to adapter
                     and */
@@ -962,7 +946,7 @@ static gboolean trigger_jointer_is_EOS(TriggerJointer *jointer) {
     GstBuffer *buf = gst_collect_pads_peek(
       jointer->collect, (GstCollectData *)jointer->collect_postcohdata);
 
-    if (!buf) { // equals buf == NULL ?
+    if (buf == NULL) { // equals !buf ?
         /* no buffer in postcoh pad, mark EOS */
         return TRUE;
     } else
@@ -989,7 +973,7 @@ static GstFlowReturn collected(GstCollectPads *pads, gpointer user_data) {
         return GST_FLOW_ERROR;
     }
 
-    /* check end of stream ? */
+    /* check end of stream (EOS) ? */
     if (trigger_jointer_is_EOS(jointer)) {
         ret = gst_pad_push_event(jointer->srcpad, gst_event_new_eos());
         return ret;
